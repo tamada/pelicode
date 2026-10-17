@@ -11,7 +11,7 @@ use crate::Error;
 /// versions must never be compared with each other.
 pub const NORMALIZER_VERSION: u32 = 1;
 
-/// Normalization level (see spec §4.2).
+/// Normalization level (see specification §4.2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Level {
     /// Tokens without whitespace and comments.

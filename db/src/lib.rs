@@ -1,4 +1,4 @@
-//! SQLite storage of function features (spec §6).
+//! SQLite storage of function features (specification §5).
 
 #![warn(missing_docs)]
 

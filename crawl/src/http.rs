@@ -72,8 +72,9 @@ impl Client {
 
     /// GETs `url`, reading at most `limit` bytes. 404 becomes [`Error::NotFound`].
     ///
-    /// Waits until `delay` has passed since the previous request, and retries
-    /// 429, 5xx and network errors up to four times with exponential backoff.
+    /// Waits until `delay` has passed since the previous request. On 429, 5xx
+    /// and network errors, the request is tried up to four times in all, with
+    /// exponential backoff.
     ///
     /// # Errors
     ///

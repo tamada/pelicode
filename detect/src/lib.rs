@@ -1,4 +1,4 @@
-//! Detection of functions similar to the stored ones (spec §7).
+//! Detection of functions similar to the stored ones (specification §7).
 //!
 //! Candidates are searched in stages: exact hashes from the weakest to the
 //! strongest normalization, then LSH buckets, then the fingerprint sets of

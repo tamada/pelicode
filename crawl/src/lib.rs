@@ -1,5 +1,5 @@
 //! Crawler: fetches package sources from public repositories and indexes
-//! their functions (spec §5).
+//! their functions (specification §6).
 
 #![warn(missing_docs)]
 

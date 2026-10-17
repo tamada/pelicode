@@ -77,7 +77,7 @@ pelicode scan ./project-c
 
 - **Datasets and method comparison**: `pelicode extract -f json` gives the normalized tokens, fingerprints, MinHash signatures and LSH buckets of every function, and `--kgram`, `--window`, `--levels` and `--ident-mode` change how they are computed.
 - **Measuring reuse**: how much code is shared within and across ecosystems, and which code is so common that it is no evidence of copying (`pelicode stats`).
-- **Evaluation**: the basis for the evaluation planned in the [specification](../assets/spec.md) (§9): recall and precision on mutated code, and speed and database size as the database grows.
+- **Evaluation**: the basis for the evaluation planned in the [specification](spec.md#11-evaluation) (§11): recall and precision on mutated code, and speed and database size as the database grows.
 - **Works today**: extraction, indexing and statistics. A command that runs evaluation experiments (`pelicode eval`) is planned.
 
 ## Where the database comes from
