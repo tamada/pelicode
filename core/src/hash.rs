@@ -25,6 +25,17 @@ impl Hash128 {
     pub fn to_hex(&self) -> String {
         to_hex(&self.0)
     }
+
+    pub fn from_hex(hex: &str) -> Option<Hash128> {
+        if hex.len() != 32 || !hex.is_ascii() {
+            return None;
+        }
+        let mut bytes = [0u8; 16];
+        for (i, byte) in bytes.iter_mut().enumerate() {
+            *byte = u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16).ok()?;
+        }
+        Some(Hash128(bytes))
+    }
 }
 
 impl fmt::Display for Hash128 {
@@ -169,6 +180,13 @@ mod tests {
         for start in 0..=hashes.len() - 4 {
             assert!(fps.iter().any(|(pos, _)| (start..start + 4).contains(pos)));
         }
+    }
+
+    #[test]
+    fn hex_round_trip() {
+        let h = Hash128::of_tokens(&toks("a b c"));
+        assert_eq!(Hash128::from_hex(&h.to_hex()), Some(h));
+        assert_eq!(Hash128::from_hex("zz"), None);
     }
 
     #[test]

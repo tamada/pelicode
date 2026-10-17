@@ -91,6 +91,7 @@ fn finds_exact_copies() {
     let dir = tempfile::tempdir().unwrap();
     let db = database(&dir);
     let reports = Detector::new(&db, options())
+        .unwrap()
         .detect(&[file("Copy.java", ORIGINAL)], |_, _| true)
         .unwrap();
     assert_eq!(reports.len(), 1);
@@ -106,6 +107,7 @@ fn finds_disguised_copies() {
     let dir = tempfile::tempdir().unwrap();
     let db = database(&dir);
     let reports = Detector::new(&db, options())
+        .unwrap()
         .detect(&[file("Finder.java", DISGUISED)], |_, _| true)
         .unwrap();
     assert_eq!(reports.len(), 1, "{reports:#?}");
@@ -121,6 +123,7 @@ fn ignores_unrelated_and_excluded_code() {
     let dir = tempfile::tempdir().unwrap();
     let db = database(&dir);
     let reports = Detector::new(&db, options())
+        .unwrap()
         .detect(&[file("Other.java", UNRELATED)], |_, _| true)
         .unwrap();
     assert!(reports.is_empty(), "{reports:#?}");
@@ -130,6 +133,7 @@ fn ignores_unrelated_and_excluded_code() {
         ..options()
     };
     let reports = Detector::new(&db, excluding)
+        .unwrap()
         .detect(&[file("Copy.java", ORIGINAL)], |_, _| true)
         .unwrap();
     assert!(reports.is_empty());
@@ -146,4 +150,93 @@ fn config_follows_the_database() {
     Database::open(&path, &stored).unwrap();
     let db = Database::open_unchecked(&path).unwrap();
     assert_eq!(db.config_from_meta(&Config::default()).unwrap().kgram, 7);
+}
+
+/// Boilerplate found in many packages.
+const COMMON: &str = r#"
+class Point {
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        Point other = (Point) o;
+        return x == other.x && y == other.y && z == other.z;
+    }
+}
+"#;
+
+fn package(name: &str) -> PackageInfo {
+    PackageInfo {
+        ecosystem: "maven".into(),
+        name: name.into(),
+        version: "1.0".into(),
+        ..PackageInfo::default()
+    }
+}
+
+#[test]
+fn ignores_code_common_to_many_packages() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut db = database(&dir);
+    for name in ["a:a", "b:b", "c:c"] {
+        db.index(&package(name), &[file("Point.java", COMMON)])
+            .unwrap();
+    }
+    let info = db.refresh_hash_stats().unwrap();
+    assert_eq!(info.packages, 4);
+
+    let query = [file("Point.java", COMMON), file("Copy.java", ORIGINAL)];
+    let names = |options: Options| -> Vec<String> {
+        Detector::new(&db, options)
+            .unwrap()
+            .detect(&query, |_, _| true)
+            .unwrap()
+            .into_iter()
+            .map(|r| r.name)
+            .collect()
+    };
+    // The boilerplate is in 3 packages: reported without a stop threshold only.
+    let all = names(Options {
+        stop_packages: 0,
+        ..options()
+    });
+    assert_eq!(all, ["equals", "binarySearch"]);
+    let filtered = names(Options {
+        stop_packages: 3,
+        ..options()
+    });
+    assert_eq!(filtered, ["binarySearch"]);
+
+    let reports = Detector::new(
+        &db,
+        Options {
+            stop_packages: 0,
+            ..options()
+        },
+    )
+    .unwrap()
+    .detect(&query[..1], |_, _| true)
+    .unwrap();
+    assert_eq!(reports[0].candidates[0].package_count, Some(3));
+}
+
+#[test]
+fn idf_still_finds_disguised_copies() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut db = database(&dir);
+    db.index(&package("a:a"), &[file("Point.java", COMMON)])
+        .unwrap();
+    db.refresh_hash_stats().unwrap();
+    let reports = Detector::new(
+        &db,
+        Options {
+            idf: true,
+            ..options()
+        },
+    )
+    .unwrap()
+    .detect(&[file("Finder.java", DISGUISED)], |_, _| true)
+    .unwrap();
+    let c = &reports[0].candidates[0];
+    assert!((0.5..=1.0).contains(&c.similarity), "{}", c.similarity);
 }

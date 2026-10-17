@@ -2,6 +2,7 @@ mod crawl;
 mod git;
 mod output;
 mod scan;
+mod stats;
 
 use std::fs::File;
 use std::io::{self, BufWriter, Write};
@@ -33,6 +34,8 @@ enum Command {
     Scan(scan::ScanArgs),
     /// Fetches packages from a public repository (pypi, maven) and indexes them.
     Crawl(crawl::CrawlArgs),
+    /// Shows database statistics and the hashes shared by the most packages.
+    Stats(stats::StatsArgs),
     /// Lists the supported languages and their file extensions.
     Languages,
 }
@@ -105,6 +108,9 @@ struct IndexArgs {
     /// Format of the summary.
     #[arg(long, value_enum, default_value_t = SummaryFormat::Text)]
     format: SummaryFormat,
+    /// Rebuild the per-hash package counts afterwards (see `pelicode stats`).
+    #[arg(long)]
+    refresh_stats: bool,
     #[command(flatten)]
     features: FeatureArgs,
 }
@@ -180,6 +186,7 @@ fn run(cli: Cli) -> Result<()> {
         Command::Index(args) => index(args),
         Command::Extract(args) => extract(args),
         Command::Export(args) => export(args),
+        Command::Stats(args) => stats::run(args),
         Command::Crawl(args) => {
             if !crawl::run(args)? {
                 std::process::exit(1);
@@ -245,6 +252,9 @@ fn index(args: IndexArgs) -> Result<()> {
         ..PackageInfo::default()
     };
     let summary = db.index(&package, &files)?;
+    if args.refresh_stats {
+        db.refresh_hash_stats()?;
+    }
     let stats = db.stats()?;
     match args.format {
         SummaryFormat::Text => {

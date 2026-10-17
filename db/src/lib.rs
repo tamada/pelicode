@@ -23,13 +23,15 @@ pub enum Error {
 }
 
 mod query;
+mod stats;
 
 pub use query::{FunctionInfo, Occurrence, StoredFingerprint};
+pub use stats::{CommonHash, HashStatsInfo};
 
 pub type Result<T> = std::result::Result<T, Error>;
 
 /// Version of the table layout; databases with another version are rejected.
-pub const SCHEMA_VERSION: u32 = 3;
+pub const SCHEMA_VERSION: u32 = 4;
 
 const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS meta (
@@ -106,6 +108,7 @@ CREATE TABLE IF NOT EXISTS fingerprint (
     end_line    INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS fingerprint_lookup ON fingerprint(level, hash);
+CREATE INDEX IF NOT EXISTS fingerprint_function ON fingerprint(function_id, level);
 CREATE TABLE IF NOT EXISTS minhash (
     function_id INTEGER NOT NULL REFERENCES function(id),
     level       INTEGER NOT NULL,
@@ -119,13 +122,21 @@ CREATE TABLE IF NOT EXISTS lsh_bucket (
     function_id INTEGER NOT NULL REFERENCES function(id)
 );
 CREATE INDEX IF NOT EXISTS lsh_bucket_lookup ON lsh_bucket(level, band, bucket_hash);
-CREATE TABLE IF NOT EXISTS hash_stats (
+-- Document frequencies, rebuilt by `refresh_hash_stats`. Only hashes found
+-- in two or more packages are stored; a missing hash counts as one package.
+CREATE TABLE IF NOT EXISTS exact_stats (
     level          INTEGER NOT NULL,
     hash           BLOB NOT NULL,
-    kind           TEXT NOT NULL,
     package_count  INTEGER NOT NULL,
     function_count INTEGER NOT NULL,
-    PRIMARY KEY (level, hash, kind)
+    PRIMARY KEY (level, hash)
+);
+CREATE TABLE IF NOT EXISTS fingerprint_stats (
+    level          INTEGER NOT NULL,
+    hash           INTEGER NOT NULL,
+    package_count  INTEGER NOT NULL,
+    function_count INTEGER NOT NULL,
+    PRIMARY KEY (level, hash)
 );
 "#;
 
@@ -353,6 +364,12 @@ impl Database {
                 params![version_id, file_id, file.path.to_string_lossy()],
             )?;
         }
+        // Lets `hash_stats_info` tell whether the statistics are out of date.
+        tx.execute(
+            "INSERT INTO meta (key, value) VALUES ('index_generation', '1')
+             ON CONFLICT (key) DO UPDATE SET value = CAST(value AS INTEGER) + 1",
+            [],
+        )?;
         tx.commit()?;
         Ok(summary)
     }
@@ -728,6 +745,53 @@ class A {
             .query_row("SELECT error FROM package_version", [], |r| r.get(0))
             .unwrap();
         assert_eq!(error, None);
+    }
+
+    #[test]
+    fn counts_packages_per_hash() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut db = Database::open(dir.path().join("t.db"), &Config::default()).unwrap();
+        let other = |name: &str| PackageInfo {
+            name: name.into(),
+            ..pkg("1.0")
+        };
+        // Two versions of one package count once.
+        db.index(&pkg("1.0"), &[file("A.java")]).unwrap();
+        db.index(&pkg("2.0"), &[file("A.java")]).unwrap();
+        assert!(db.hash_stats_info().unwrap().stale);
+
+        let info = db.refresh_hash_stats().unwrap();
+        assert!(!info.stale);
+        assert_eq!(info.packages, 1);
+        assert_eq!(info.common_exact_hashes, 0);
+
+        db.index(&other("copy"), &[file("B.java")]).unwrap();
+        assert!(db.hash_stats_info().unwrap().stale);
+        let info = db.refresh_hash_stats().unwrap();
+        assert_eq!(info.packages, 2);
+        assert!(info.common_exact_hashes > 0);
+        assert!(info.common_fingerprints > 0);
+
+        let sum = db
+            .functions()
+            .unwrap()
+            .into_iter()
+            .find(|r| r.name == "sum")
+            .unwrap();
+        let hash = pelicode_core::Hash128::from_hex(&sum.exact_hashes[&Level::N1]).unwrap();
+        assert_eq!(db.exact_package_count(Level::N1, &hash).unwrap(), 2);
+        assert_eq!(
+            db.exact_package_count(Level::N1, &pelicode_core::Hash128([0; 16]))
+                .unwrap(),
+            1
+        );
+        let common = db.common_exact_hashes(Level::N1, 0, 10).unwrap();
+        assert!(
+            common
+                .iter()
+                .all(|c| c.package_count == 2 && c.sample.is_some())
+        );
+        assert!(!db.common_fingerprints(Level::N1, 10).unwrap().is_empty());
     }
 
     #[test]

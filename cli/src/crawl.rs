@@ -28,6 +28,9 @@ pub struct CrawlArgs {
     /// Re-index versions that are already in the database.
     #[arg(long)]
     force: bool,
+    /// Rebuild the per-hash package counts afterwards (see `pelicode stats`).
+    #[arg(long)]
+    refresh_stats: bool,
     /// Minimum interval between requests, in milliseconds.
     #[arg(long, default_value_t = 1000)]
     delay_ms: u64,
@@ -113,5 +116,12 @@ pub fn run(args: CrawlArgs) -> Result<bool> {
         }
     }
     println!("{indexed} indexed, {skipped} skipped, {failed} failed");
+    if args.refresh_stats {
+        let info = db.refresh_hash_stats()?;
+        println!(
+            "hash statistics refreshed: {} exact hashes and {} fingerprints in 2+ of {} packages",
+            info.common_exact_hashes, info.common_fingerprints, info.packages
+        );
+    }
     Ok(failed == 0)
 }

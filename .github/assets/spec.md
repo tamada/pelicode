@@ -138,6 +138,30 @@ getter/setter、`equals`/`hashCode`、定型的な例外処理など、多数の
 - 完全ハッシュ・フィンガープリントごとに **出現パッケージ数（文書頻度）** を記録する。
 - 文書頻度が閾値（例: 異なるパッケージ 100 件以上）を超えるものを **ストップフィンガープリント** とし、候補検索から除外するか重みを下げる（IDF 重み付け）。
 
+実装（v0.1）:
+
+- 文書頻度は `exact_stats` と `fingerprint_stats` に、2 パッケージ以上に現れるハッシュだけを記録する（記録のないハッシュは 1 パッケージとみなす）。同じパッケージの複数バージョンは 1 と数える。
+- 集計は一括で作り直す（`pelicode stats --refresh`、または `index` / `crawl` の `--refresh-stats`）。索引の世代番号を `meta` に記録し、集計の後に索引された場合は「古い」と表示・警告する。
+- 検出時の除外閾値は `--stop-packages N` または `--stop-packages P%`（既定 100、0 で無効）。完全一致は、閾値以上のパッケージに現れるハッシュなら報告しない。類似一致は、閾値以上のフィンガープリントを両方の集合から除いてから類似度を計算する。
+- `--idf` を付けると、フィンガープリントを `ln(1 + N / df)` で重み付けした Jaccard 係数・包含率を使う（N はパッケージ数、df はそのフィンガープリントを含むパッケージ数）。
+- 共通部分を除いた後に残ったフィンガープリントが少ないと、1〜2 個の偶然の一致で類似度が高くなる。これを防ぐため、共有フィンガープリント数の下限 `--min-shared`（既定 5）を設ける。
+
+予備的な観察（PyPI 上位 25 パッケージ・約 7.7 万関数、閾値 0.5、検査対象は DB にない Python 標準ライブラリ 3 パッケージと、名前を変えた `requests.utils.super_len` のコピー）:
+
+| k | 除外 | コピーの類似度 | 偶然の一致 |
+| --- | --- | --- | --- |
+| 5 | なし | 0.82 | 5 件 |
+| 5 | 20% 以上 | 検出できない | 0 件 |
+| 5 | 40% 以上 | 0.77 | 1 件 |
+| 10 | なし | 0.72 | 2 件 |
+| 10 | 20% 以上 | 0.66 | 1 件 |
+| 10 | 40% 以上 | 0.67 | 0 件 |
+
+- N1 で正規化した 5-gram は、種類が約 5.8 万しかなく識別力が低い。`super_len` の 60 個のフィンガープリントのうち 48 個は 10 パッケージ以上に現れるため、文書頻度で除外するとコピーの証拠も消える。k=10 では種類が約 42 万に増え、除外しても検出は保たれる。
+- 残った偶然の一致のうち `http.client` の `_tunnel` は、urllib3 が同クラスを継承して上書きした処理であり、由来の同じコードの可能性が高い。
+- この規模（N=25）では IDF 重み付けの効果は小さかった。
+- k の既定値（現在 5）と除外閾値は、規模を広げた評価（§9）で決める。
+
 ## 5. Crawler
 
 ### 5.1 対象リポジトリ
@@ -298,7 +322,8 @@ pelicode crawl pypi --top 1000 --contact https://example.org/pelicode
 pelicode crawl maven org.apache.commons:commons-lang3 com.google.code.gson:gson:2.11.0
 pelicode crawl maven --list maven-packages.txt
 pelicode index   ./project --db pelicode.db --name demo --version 1.0
-pelicode stats   --db pelicode.db                       # 索引の統計・ストップフィンガープリント
+pelicode stats   --db pelicode.db --refresh             # 文書頻度の再集計と、ありふれたハッシュの一覧
+pelicode scan    --db pelicode.db ./src --stop-packages 10% --idf
 pelicode snapshot --db pelicode.db --out snapshot.db    # 配布用スナップショット
 pelicode scan    --db pelicode.db ./src                 # ディレクトリ全体
 pelicode scan    --db pelicode.db --git main..HEAD      # コミット範囲

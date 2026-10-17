@@ -44,6 +44,56 @@ pub struct ScanArgs {
     /// Exit with status 1 when any candidate is found.
     #[arg(long)]
     fail_on_match: bool,
+    /// Ignore hashes found in at least N packages, or in P% of the packages (0 disables).
+    #[arg(long, value_name = "N|P%", default_value = "100")]
+    stop_packages: StopThreshold,
+    /// Minimum number of shared fingerprints (common ones excluded) for a similar match.
+    #[arg(long, value_name = "N", default_value_t = Options::default().min_shared)]
+    min_shared: usize,
+    /// Weight fingerprints by inverse document frequency.
+    #[arg(long)]
+    idf: bool,
+}
+
+/// A number of packages, absolute or relative to the database.
+#[derive(Clone, Copy, Debug)]
+pub enum StopThreshold {
+    Count(usize),
+    Percent(f64),
+}
+
+impl StopThreshold {
+    /// The absolute threshold for a database of `packages` packages; at least 2,
+    /// since every stored hash is found in one package.
+    fn resolve(self, packages: usize) -> usize {
+        match self {
+            StopThreshold::Count(n) => n,
+            StopThreshold::Percent(p) if p <= 0.0 => 0,
+            StopThreshold::Percent(p) => ((p / 100.0 * packages as f64).ceil() as usize).max(2),
+        }
+    }
+}
+
+impl std::str::FromStr for StopThreshold {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let invalid = || format!("expected a count or a percentage, got {s}");
+        match s.strip_suffix('%') {
+            Some(p) => p
+                .trim()
+                .parse::<f64>()
+                .ok()
+                .filter(|p| (0.0..=100.0).contains(p))
+                .map(StopThreshold::Percent)
+                .ok_or_else(invalid),
+            None => s
+                .trim()
+                .parse()
+                .map(StopThreshold::Count)
+                .map_err(|_| invalid()),
+        }
+    }
 }
 
 /// Runs the scan; returns whether any candidate was found.
@@ -69,9 +119,23 @@ pub fn run(args: ScanArgs) -> Result<bool> {
                 None => bail!("--exclude expects ECOSYSTEM:NAME, got {p}"),
             })
             .collect::<Result<_>>()?,
+        stop_packages: args.stop_packages.resolve(db.package_count()?),
+        min_shared: args.min_shared,
+        idf: args.idf,
         ..Options::default()
     };
-    let detector = Detector::new(&db, options);
+    if options.stop_packages > 0 || args.idf {
+        let info = db.hash_stats_info()?;
+        if info.updated_at.is_none() {
+            eprintln!(
+                "warning: hash statistics were never computed; common code is not filtered \
+                 (run `pelicode stats --refresh`)"
+            );
+        } else if info.stale {
+            eprintln!("warning: hash statistics are out of date (run `pelicode stats --refresh`)");
+        }
+    }
+    let detector = Detector::new(&db, options)?;
 
     let reports = match &args.git {
         Some(range) => {
@@ -257,4 +321,20 @@ fn csv(out: &mut dyn Write, reports: &[Report]) -> Result<()> {
     }
     writer.flush()?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stop_thresholds() {
+        let parse = |s: &str| s.parse::<StopThreshold>().unwrap();
+        assert_eq!(parse("100").resolve(25), 100);
+        assert_eq!(parse("10%").resolve(25), 3);
+        assert_eq!(parse("1%").resolve(25), 2);
+        assert_eq!(parse("0%").resolve(25), 0);
+        assert!("abc".parse::<StopThreshold>().is_err());
+        assert!("120%".parse::<StopThreshold>().is_err());
+    }
 }

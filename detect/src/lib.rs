@@ -4,6 +4,7 @@
 //! strongest normalization, then LSH buckets, then the fingerprint sets of
 //! the LSH candidates are compared.
 
+use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::PathBuf;
 
@@ -30,6 +31,16 @@ pub struct Options {
     pub max_occurrences: usize,
     /// Packages whose functions are never reported, as `(ecosystem, name)`.
     pub exclude_packages: Vec<(String, String)>,
+    /// Hashes found in at least this many packages are ignored (0 disables).
+    /// Needs the statistics of [`Database::refresh_hash_stats`].
+    pub stop_packages: usize,
+    /// Minimum number of shared (non-common) fingerprints for a similar match.
+    /// Without it, a function whose fingerprints are almost all common could
+    /// reach a high similarity through one or two remaining ones.
+    pub min_shared: usize,
+    /// Weight fingerprints by inverse document frequency, `ln(1 + N / df)`,
+    /// where N is the number of packages and df those containing the fingerprint.
+    pub idf: bool,
 }
 
 impl Default for Options {
@@ -40,6 +51,9 @@ impl Default for Options {
             max_candidates: 5,
             max_occurrences: 5,
             exclude_packages: Vec::new(),
+            stop_packages: 100,
+            min_shared: 5,
+            idf: false,
         }
     }
 }
@@ -59,10 +73,13 @@ pub enum MatchKind {
 pub struct Candidate {
     #[serde(rename = "match")]
     pub kind: MatchKind,
-    /// 1.0 for exact matches; the Jaccard similarity of fingerprint sets otherwise.
+    /// 1.0 for exact matches; the (weighted) Jaccard similarity of fingerprint sets otherwise.
     pub similarity: f64,
-    /// Share of the checked function's fingerprints found in the candidate.
+    /// (Weighted) share of the checked function's fingerprints found in the candidate.
     pub containment: f64,
+    /// For exact matches, the number of packages containing the same normalized function.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub package_count: Option<usize>,
     pub shared_fingerprints: usize,
     /// Lines of the checked function covered by shared fingerprints.
     pub matched_lines: Vec<(u32, u32)>,
@@ -89,13 +106,65 @@ pub struct Report {
 pub struct Detector<'a> {
     db: &'a Database,
     options: Options,
+    /// Packages in the database, the N of IDF.
+    packages: usize,
+    document_frequencies: RefCell<HashMap<(Level, u64), usize>>,
 }
 
 impl<'a> Detector<'a> {
     /// `db` must have been opened for features computed like the checked ones
     /// (see [`Database::config_from_meta`]).
-    pub fn new(db: &'a Database, options: Options) -> Detector<'a> {
-        Detector { db, options }
+    pub fn new(db: &'a Database, options: Options) -> Result<Detector<'a>> {
+        Ok(Detector {
+            db,
+            options,
+            packages: db.package_count()?,
+            document_frequencies: RefCell::new(HashMap::new()),
+        })
+    }
+
+    fn is_common(&self, package_count: usize) -> bool {
+        self.options.stop_packages > 0 && package_count >= self.options.stop_packages
+    }
+
+    /// Weight of a fingerprint; 0 for common ones.
+    fn weight(&self, level: Level, hash: u64) -> Result<f64> {
+        let cached = self
+            .document_frequencies
+            .borrow()
+            .get(&(level, hash))
+            .copied();
+        let df = match cached {
+            Some(df) => df,
+            None => {
+                let df = self.db.fingerprint_package_count(level, hash)?;
+                self.document_frequencies
+                    .borrow_mut()
+                    .insert((level, hash), df);
+                df
+            }
+        };
+        Ok(if self.is_common(df) {
+            0.0
+        } else if self.options.idf {
+            (1.0 + self.packages.max(1) as f64 / df.max(1) as f64).ln()
+        } else {
+            1.0
+        })
+    }
+
+    fn weights(
+        &self,
+        level: Level,
+        hashes: impl Iterator<Item = u64>,
+    ) -> Result<HashMap<u64, f64>> {
+        let mut weights = HashMap::new();
+        for hash in hashes {
+            if let std::collections::hash_map::Entry::Vacant(e) = weights.entry(hash) {
+                e.insert(self.weight(level, hash)?);
+            }
+        }
+        Ok(weights)
     }
 
     /// Checks the functions of `files` accepted by `select`; only functions
@@ -137,11 +206,16 @@ impl<'a> Detector<'a> {
             let Some(hash) = function.exact_hashes.get(&level) else {
                 continue;
             };
+            let package_count = self.db.exact_package_count(level, hash)?;
+            if self.is_common(package_count) {
+                continue;
+            }
             for id in self.db.functions_by_exact_hash(level, hash)? {
                 found.entry(id).or_insert(Match {
                     kind: MatchKind::Exact(level),
                     similarity: 1.0,
                     containment: 1.0,
+                    package_count: Some(package_count),
                     shared: 0,
                     matched_lines: vec![(function.start_line as u32, function.end_line as u32)],
                     candidate_lines: Vec::new(),
@@ -154,7 +228,12 @@ impl<'a> Detector<'a> {
             for (band, bucket) in features.lsh_buckets.iter().enumerate() {
                 lsh_hits.extend(self.db.functions_by_lsh_bucket(*level, band, *bucket)?);
             }
-            let query: HashSet<u64> = features.fingerprints.iter().map(|f| f.hash).collect();
+            let query = self.weights(*level, features.fingerprints.iter().map(|f| f.hash))?;
+            let query_weight: f64 = query.values().sum();
+            if query_weight == 0.0 {
+                // Nothing but common code.
+                continue;
+            }
             for id in lsh_hits {
                 if found
                     .get(&id)
@@ -163,17 +242,30 @@ impl<'a> Detector<'a> {
                     continue;
                 }
                 let stored = self.db.fingerprints(id, *level)?;
-                let other: HashSet<u64> = stored.iter().map(|f| f.hash).collect();
-                let shared: HashSet<u64> = query.intersection(&other).copied().collect();
-                let union = query.len() + other.len() - shared.len();
-                let similarity = shared.len() as f64 / union.max(1) as f64;
-                if similarity < self.options.threshold {
+                let other = self.weights(*level, stored.iter().map(|f| f.hash))?;
+                let shared: HashSet<u64> = query
+                    .iter()
+                    .filter(|(h, w)| **w > 0.0 && other.contains_key(h))
+                    .map(|(h, _)| *h)
+                    .collect();
+                let shared_weight: f64 = shared.iter().map(|h| query[h]).sum();
+                let union = query_weight + other.values().sum::<f64>() - shared_weight;
+                let similarity = if union > 0.0 {
+                    shared_weight / union
+                } else {
+                    0.0
+                };
+                if similarity < self.options.threshold
+                    || shared.is_empty()
+                    || shared.len() < self.options.min_shared
+                {
                     continue;
                 }
                 let candidate = Match {
                     kind: MatchKind::Similar(*level),
                     similarity,
-                    containment: shared.len() as f64 / query.len().max(1) as f64,
+                    containment: shared_weight / query_weight,
+                    package_count: None,
                     shared: shared.len(),
                     matched_lines: merge(
                         features
@@ -218,6 +310,7 @@ impl<'a> Detector<'a> {
                 kind: m.kind,
                 similarity: m.similarity,
                 containment: m.containment,
+                package_count: m.package_count,
                 shared_fingerprints: m.shared,
                 matched_lines: m.matched_lines,
                 candidate_lines,
@@ -248,6 +341,7 @@ struct Match {
     kind: MatchKind,
     similarity: f64,
     containment: f64,
+    package_count: Option<usize>,
     shared: usize,
     matched_lines: Vec<(u32, u32)>,
     candidate_lines: Vec<(u32, u32)>,
@@ -273,6 +367,29 @@ fn merge(ranges: impl Iterator<Item = (u32, u32)>) -> Vec<(u32, u32)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn weights_follow_document_frequency() {
+        let dir = tempfile::tempdir().unwrap();
+        let db =
+            Database::open(dir.path().join("t.db"), &pelicode_core::Config::default()).unwrap();
+        let mut detector = Detector::new(&db, Options::default()).unwrap();
+        detector.packages = 3;
+        detector
+            .document_frequencies
+            .borrow_mut()
+            .insert((Level::N1, 1), 3);
+        detector
+            .document_frequencies
+            .borrow_mut()
+            .insert((Level::N1, 2), 1);
+        assert_eq!(detector.weight(Level::N1, 1).unwrap(), 1.0);
+        detector.options.idf = true;
+        assert!((detector.weight(Level::N1, 1).unwrap() - 2f64.ln()).abs() < 1e-9);
+        assert!((detector.weight(Level::N1, 2).unwrap() - 4f64.ln()).abs() < 1e-9);
+        detector.options.stop_packages = 3;
+        assert_eq!(detector.weight(Level::N1, 1).unwrap(), 0.0);
+    }
 
     #[test]
     fn merges_line_ranges() {

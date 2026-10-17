@@ -151,3 +151,38 @@ fn several_directories_keep_distinct_paths() {
     assert!(csv.contains(",src/Stack.java,"), "{csv}");
     assert!(csv.contains(",lib/stack.py,"), "{csv}");
 }
+
+#[test]
+fn stats_after_refresh() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = db_arg(dir.path());
+    pelicode(&[
+        "index",
+        FIXTURE,
+        "--db",
+        &db,
+        "--name",
+        "a",
+        "--refresh-stats",
+    ]);
+    let stats: serde_json::Value =
+        serde_json::from_str(&pelicode(&["stats", "--db", &db, "-f", "json"])).unwrap();
+    assert_eq!(stats["hash_stats"]["stale"], false);
+    assert_eq!(stats["hash_stats"]["packages"], 1);
+
+    // The same code in a second package makes its hashes common.
+    pelicode(&["index", FIXTURE, "--db", &db, "--name", "b"]);
+    let stats: serde_json::Value = serde_json::from_str(&pelicode(&[
+        "stats",
+        "--db",
+        &db,
+        "--refresh",
+        "--min-tokens",
+        "0",
+        "-f",
+        "json",
+    ]))
+    .unwrap();
+    assert_eq!(stats["hash_stats"]["packages"], 2);
+    assert_eq!(stats["common_exact_hashes"][0]["package_count"], 2);
+}
