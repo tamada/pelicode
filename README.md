@@ -9,7 +9,7 @@ Just as dependabot checks dependency versions against external repositories, pel
 > [!IMPORTANT]
 > pelicode does **not** decide whether code is plagiarized or violates a license. It shows "similar code candidates to review", together with their sources and licenses. Whether code was reused, and whether that raises a license issue, is for a person to check and decide.
 
-This is a research prototype (v0.1). The design is described in the [specification](.github/assets/spec.md) (in Japanese).
+This is a research prototype (v0.1). The [usage scenarios](.github/docs/scenario.md) describe who pelicode is for and what works today, and the design is described in the [specification](.github/assets/spec.md) (in Japanese).
 
 ## How it works
 
