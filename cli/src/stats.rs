@@ -18,6 +18,10 @@ pub struct StatsArgs {
     /// Rebuild the per-hash package counts first.
     #[arg(long)]
     refresh: bool,
+    /// With --refresh, recount every hash instead of only those of what was indexed since the
+    /// last statistics.
+    #[arg(long, requires = "refresh")]
+    full: bool,
     /// Number of most common hashes to list.
     #[arg(long, default_value_t = 10)]
     top: usize,
@@ -39,8 +43,16 @@ pub fn run(args: StatsArgs, settings: Option<&Loaded>) -> Result<()> {
         bail!("{}: no such database", db_path.display());
     }
     let mut db = Database::open_unchecked(&db_path)?;
+    let mut refreshed = None;
     if args.refresh {
-        db.refresh_hash_stats()?;
+        let before = db.hash_stats_info()?;
+        let incremental = before.incremental && !args.full;
+        if incremental {
+            db.refresh_hash_stats()?;
+        } else {
+            db.rebuild_hash_stats()?;
+        }
+        refreshed = Some((incremental, before.pending_hashes));
     }
     let tables = db.stats()?;
     let hashes = db.hash_stats_info()?;
@@ -52,6 +64,10 @@ pub fn run(args: StatsArgs, settings: Option<&Loaded>) -> Result<()> {
             let value = serde_json::json!({
                 "tables": tables,
                 "hash_stats": hashes,
+                "refreshed": refreshed.map(|(incremental, recounted)| serde_json::json!({
+                    "incremental": incremental,
+                    "recounted_hashes": if incremental { Some(recounted) } else { None },
+                })),
                 "common_exact_hashes": exact,
                 "common_fingerprints": fingerprints,
             });
@@ -67,6 +83,15 @@ pub fn run(args: StatsArgs, settings: Option<&Loaded>) -> Result<()> {
                 tables.functions,
                 tables.indexed_functions
             );
+            if let Some((incremental, pending)) = refreshed {
+                if incremental {
+                    println!(
+                        "hash statistics refreshed incrementally ({pending} hashes recounted)"
+                    );
+                } else {
+                    println!("hash statistics recounted from scratch");
+                }
+            }
             match &hashes.updated_at {
                 Some(at) => println!(
                     "hash statistics: {at}{}; {} exact hashes and {} fingerprints in 2+ packages",

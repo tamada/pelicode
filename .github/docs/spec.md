@@ -196,7 +196,7 @@ The normalization version, `ident_mode`, k, w, n and b decide the values of the 
 
 - **No source code is stored.** The database holds hashes, locations (lines and byte ranges), sources (package, version, path, download URL, archive hash) and licenses. If it leaks, nobody's code leaks with it; the original can always be fetched again from its source.
 - **Files are identified by their content.** Functions belong to a file content (SHA-256), and files are linked to package versions many-to-many. Files unchanged between versions are stored once.
-- **Compatibility is checked.** The version of the table layout (`SCHEMA_VERSION`, currently 4) and the feature parameters are recorded, and a database that differs is not opened.
+- **Compatibility is checked.** The version of the table layout (`SCHEMA_VERSION`, currently 5; a version 4 database is upgraded in place) and the feature parameters are recorded, and a database that differs is not opened.
 - SQLite (in WAL mode) is used: a single file is easy to distribute and reproduce.
 
 ### 5.2 Data Model
@@ -215,6 +215,7 @@ The normalization version, `ident_mode`, k, w, n and b decide the values of the 
 | `minhash` | Function, level, signature | (function, level) |
 | `lsh_bucket` | Level, band, bucket, function | (level, band, bucket) |
 | `exact_stats` / `fingerprint_stats` | Level, hash, package count, function count (hashes in two or more packages only) | (level, hash) |
+| `stats_pending_exact` / `stats_pending_fingerprint` | Level and hash whose package count may have changed since the last statistics | (level, hash) |
 
 ### 5.3 Indexing
 
@@ -232,7 +233,9 @@ A version that could not be fetched or indexed is recorded with the status `fail
 For each hash, the number of packages containing it (several versions of a package count once) and the number of functions are counted into `exact_stats` and `fingerprint_stats`.
 
 - Only hashes found in two or more packages are stored; a hash without a row counts as one package.
-- The counts are rebuilt as a whole (`stats --refresh`, or `--refresh-stats` of `index` and `crawl`). Incremental updates are not implemented yet (§12).
+- The counts are refreshed by `stats --refresh`, or `--refresh-stats` of `index` and `crawl`.
+- **Incremental refresh**: a package count can only change for the hashes of files linked to or unlinked from a version. Once statistics exist, `index` records the hashes of the files of the version before and after replacing its file list in `stats_pending_exact` and `stats_pending_fingerprint`; a refresh recounts only those hashes over all linked files, and gives the same counts as a full recount. The hashes themselves are recorded, not the files, so that `clean` removing unlinked files does not lose them.
+- A full recount is made for the first statistics, for a database upgraded from schema version 4 while its statistics were out of date (the changes since were not recorded), and with `stats --refresh --full`. `meta.stats_pending_complete` tells whether the pending hashes cover every change since the last statistics.
 - The index generation at the time of counting is recorded; when the index has changed since, the counts are out of date, and `scan` warns about it.
 
 ---
@@ -498,7 +501,7 @@ A command that runs evaluation experiments (`pelicode eval`) is not implemented 
 | Exact hashes, fingerprints, MinHash, LSH | Done |
 | SQLite database (deduplication by content, compatibility checks) | Done |
 | Collection from five public repositories, with verification | Done |
-| Package counts, exclusion of common hashes, IDF | Done (counts rebuilt as a whole) |
+| Package counts (incremental refresh), exclusion of common hashes, IDF | Done |
 | Checking directories and git ranges; text, JSON and CSV | Done |
 | Settings files in YAML and JSON5 | Done |
 | SARIF output | Done |
@@ -510,7 +513,6 @@ A command that runs evaluation experiments (`pelicode eval`) is not implemented 
 
 | Feature | Description |
 | --- | --- |
-| Incremental package counts | Recount only the hashes of versions added or replaced since the last count |
 | Detection of new versions | `list_updates(since)` with the RSS feeds of crates.io, PyPI updates, index.golang.org, ... |
 | Snapshots | Creating (`pelicode snapshot`) and distributing databases without source code |
 | Evaluation | `pelicode eval` and the generation of evaluation data (§11.1) |

@@ -151,7 +151,7 @@ pelicode stats --refresh          # recount, then show
 pelicode stats --top 20 -f json
 ```
 
-The counts are not updated automatically. After `crawl` or `index`, run `pelicode stats --refresh`, or pass `--refresh-stats` to `crawl` or `index`. `scan` warns when the counts are out of date.
+The counts are not updated automatically. After `crawl` or `index`, run `pelicode stats --refresh`, or pass `--refresh-stats` to `crawl` or `index`. `scan` warns when the counts are out of date. After the first count, a refresh recounts only the hashes of what was indexed since, with the same result as recounting everything (`--refresh --full`).
 
 ### scan: searching for similar code
 

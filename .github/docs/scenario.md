@@ -93,10 +93,10 @@ Scenarios 1 to 3 need a reference database of published code, and building one i
 | --- | --- |
 | Crawling PyPI, Maven Central, the Go module proxy, RubyGems and crates.io | Done |
 | Skipping versions already indexed, and storing each file once | Done |
-| Updating the hash statistics incrementally, instead of recounting everything | Not yet |
+| Updating the hash statistics incrementally, instead of recounting everything | Done |
 | Detecting newly published versions (crates.io RSS, PyPI updates, ...) | Not yet |
 | Creating and distributing snapshots (`pelicode snapshot`) | Not yet |
-| Removing data no longer referenced, and compacting the database | Not yet |
+| Removing data no longer referenced, and compacting the database | Done (`pelicode clean`) |
 
 ## Summary
 

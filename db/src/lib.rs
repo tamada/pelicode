@@ -43,7 +43,7 @@ pub use stats::{CommonHash, HashStatsInfo};
 pub type Result<T> = std::result::Result<T, Error>;
 
 /// Version of the table layout; databases with another version are rejected.
-pub const SCHEMA_VERSION: u32 = 4;
+pub const SCHEMA_VERSION: u32 = 5;
 
 const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS meta (
@@ -150,6 +150,18 @@ CREATE TABLE IF NOT EXISTS fingerprint_stats (
     function_count INTEGER NOT NULL,
     PRIMARY KEY (level, hash)
 );
+-- Hashes whose package counts may have changed since the last statistics:
+-- those of the files linked to or unlinked from a version since then.
+CREATE TABLE IF NOT EXISTS stats_pending_exact (
+    level INTEGER NOT NULL,
+    hash  BLOB NOT NULL,
+    PRIMARY KEY (level, hash)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS stats_pending_fingerprint (
+    level INTEGER NOT NULL,
+    hash  INTEGER NOT NULL,
+    PRIMARY KEY (level, hash)
+) WITHOUT ROWID;
 "#;
 
 /// Where indexed source files come from.
@@ -344,6 +356,20 @@ impl Database {
         let stored = self.meta()?;
         match stored.get("schema_version") {
             Some(v) if *v == SCHEMA_VERSION.to_string() => Ok(()),
+            // Version 5 only adds the tables of pending hashes, created above.
+            Some(v) if v == "4" => {
+                // The statistics can be updated incrementally from now on if
+                // nothing was indexed since they were made.
+                let current = stored.get("index_generation").map_or("0", String::as_str);
+                if stored.get("stats_generation").map(String::as_str) == Some(current) {
+                    stats::set_pending_complete(&self.conn, true)?;
+                }
+                self.conn.execute(
+                    "UPDATE meta SET value = ?1 WHERE key = 'schema_version'",
+                    [SCHEMA_VERSION.to_string()],
+                )?;
+                Ok(())
+            }
             None if stored.is_empty() => {
                 self.conn.execute(
                     "INSERT INTO meta (key, value) VALUES ('schema_version', ?1)",
@@ -517,6 +543,12 @@ impl Database {
     pub fn index(&mut self, pkg: &PackageInfo, files: &[FileFeatures]) -> Result<IndexSummary> {
         let tx = self.conn.transaction()?;
         let version_id = upsert_version(&tx, pkg, "indexed", None)?;
+        // The hashes of the files unlinked here and linked below may change
+        // their package counts; remember them for an incremental refresh.
+        let track = stats::pending_complete(&tx)?;
+        if track {
+            stats::mark_pending(&tx, version_id)?;
+        }
         tx.execute(
             "DELETE FROM version_file WHERE package_version_id = ?1",
             [version_id],
@@ -546,6 +578,9 @@ impl Database {
                  VALUES (?1, ?2, ?3)",
                 params![version_id, file_id, file.path.to_string_lossy()],
             )?;
+        }
+        if track {
+            stats::mark_pending(&tx, version_id)?;
         }
         // Lets `hash_stats_info` tell whether the statistics are out of date.
         tx.execute(
@@ -1097,6 +1132,154 @@ class A {
             .unwrap();
         assert_eq!(left, 0);
         db.vacuum().unwrap();
+    }
+
+    fn stats_tables(db: &Database) -> Vec<(String, u8, Vec<u8>, i64, i64)> {
+        let mut rows = Vec::new();
+        for (table, hash) in [
+            ("exact_stats", "hash"),
+            ("fingerprint_stats", "CAST(hash AS BLOB)"),
+        ] {
+            let mut stmt = db
+                .conn
+                .prepare(&format!(
+                    "SELECT level, {hash}, package_count, function_count FROM {table}
+                     ORDER BY level, hash"
+                ))
+                .unwrap();
+            let found = stmt
+                .query_map([], |r| {
+                    Ok((
+                        table.to_string(),
+                        r.get(0)?,
+                        r.get(1)?,
+                        r.get(2)?,
+                        r.get(3)?,
+                    ))
+                })
+                .unwrap()
+                .collect::<rusqlite::Result<Vec<_>>>()
+                .unwrap();
+            rows.extend(found);
+        }
+        rows
+    }
+
+    #[test]
+    fn incremental_statistics_equal_a_rebuild() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut db = Database::open(dir.path().join("t.db"), &Config::default()).unwrap();
+        let config = Config {
+            min_tokens: 10,
+            ..Config::default()
+        };
+        let source = |n: usize| {
+            let body: String = (0..n)
+                .map(|i| format!("        total += values[{i}] * {i};\n"))
+                .collect();
+            format!(
+                "class C{n} {{\n    int f(int[] values) {{\n        int total = 0;\n{body}        return total;\n    }}\n}}\n"
+            )
+        };
+        let file = |name: &str, n: usize| {
+            let src = source(n);
+            FileFeatures {
+                path: name.into(),
+                language: Language::Java,
+                content_sha256: pelicode_core::extract::sha256_hex(src.as_bytes()),
+                functions: extract_source(Language::Java, src.as_bytes(), &config).unwrap(),
+            }
+        };
+        let package = |name: &str, version: &str| PackageInfo {
+            ecosystem: "maven".into(),
+            name: name.into(),
+            version: version.into(),
+            ..PackageInfo::default()
+        };
+
+        db.index(&package("a", "1"), &[file("A.java", 3), file("B.java", 4)])
+            .unwrap();
+        db.index(&package("b", "1"), &[file("A.java", 3)]).unwrap();
+        db.index(&package("e", "1"), &[file("E.java", 7)]).unwrap();
+        db.index(&package("f", "1"), &[file("E.java", 7)]).unwrap();
+        let info = db.refresh_hash_stats().unwrap();
+        assert!(!info.incremental || info.pending_hashes == 0);
+
+        // New packages, shared files, a version whose files are replaced
+        // (unlinking A from package a), and a cleanup in between.
+        db.index(&package("c", "1"), &[file("A.java", 3), file("C.java", 5)])
+            .unwrap();
+        db.index(&package("a", "1"), &[file("B.java", 4)]).unwrap();
+        db.index(&package("a", "2"), &[file("C.java", 5)]).unwrap();
+        db.index(&package("d", "1"), &[file("B.java", 4), file("D.java", 6)])
+            .unwrap();
+        // E is no longer shared: its hashes must leave the statistics.
+        db.index(&package("e", "1"), &[]).unwrap();
+        db.clean().unwrap();
+
+        let info = db.hash_stats_info().unwrap();
+        assert!(info.incremental && info.stale && info.pending_hashes > 0);
+        db.refresh_hash_stats().unwrap();
+        let incremental = stats_tables(&db);
+        assert_eq!(db.hash_stats_info().unwrap().pending_hashes, 0);
+
+        db.rebuild_hash_stats().unwrap();
+        assert_eq!(incremental, stats_tables(&db));
+        assert!(!incremental.is_empty());
+        let shared = |db: &Database, path: &str| -> i64 {
+            db.conn
+                .query_row(
+                    "SELECT COUNT(*) FROM exact_stats s
+                     JOIN exact_hash h ON h.level = s.level AND h.hash = s.hash
+                     JOIN function f ON f.id = h.function_id
+                     JOIN version_file vf ON vf.source_file_id = f.source_file_id
+                     WHERE vf.path = ?1",
+                    [path],
+                    |r| r.get(0),
+                )
+                .unwrap()
+        };
+        assert_eq!(shared(&db, "E.java"), 0);
+        assert!(shared(&db, "A.java") > 0);
+    }
+
+    #[test]
+    fn migrates_version_4_databases() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("t.db");
+        let downgrade = |stale: bool| {
+            let mut db = Database::open(&path, &Config::default()).unwrap();
+            db.index(&pkg("1.0"), &[file("A.java")]).unwrap();
+            db.rebuild_hash_stats().unwrap();
+            if stale {
+                db.index(&pkg("2.0"), &[file("A.java")]).unwrap();
+            }
+            db.conn
+                .execute_batch(
+                    "UPDATE meta SET value = '4' WHERE key = 'schema_version';
+                     DELETE FROM meta WHERE key = 'stats_pending_complete';
+                     DROP TABLE stats_pending_exact;
+                     DROP TABLE stats_pending_fingerprint;",
+                )
+                .unwrap();
+        };
+
+        downgrade(false);
+        let db = Database::open(&path, &Config::default()).unwrap();
+        assert_eq!(
+            db.meta().unwrap()["schema_version"],
+            SCHEMA_VERSION.to_string()
+        );
+        assert!(db.hash_stats_info().unwrap().incremental);
+        drop(db);
+
+        std::fs::remove_file(&path).unwrap();
+        downgrade(true);
+        let mut db = Database::open(&path, &Config::default()).unwrap();
+        // Something was indexed after the statistics without being tracked.
+        assert!(!db.hash_stats_info().unwrap().incremental);
+        db.refresh_hash_stats().unwrap();
+        assert!(db.hash_stats_info().unwrap().incremental);
     }
 
     #[test]

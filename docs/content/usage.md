@@ -132,6 +132,7 @@ pelicode stats [OPTIONS]
 | Option | Default | Description |
 | --- | --- | --- |
 | `--refresh` | | Recount common hashes before showing them |
+| `--full` | | With `--refresh`, recount every hash rather than only those of what was indexed since |
 | `--top <N>` | 10 | Number of common hashes to list |
 | `--level <LEVEL>` | `N1` | Normalization level of the listed hashes |
 | `--min-tokens <N>` | 50 | List exact hashes of functions with at least N tokens only |
@@ -146,6 +147,8 @@ most common fingerprints (N1):
 ```
 
 The counts are not updated when packages are added. Run `pelicode stats --refresh`, or pass `--refresh-stats` to `crawl` or `index`; `scan` warns when the counts are out of date.
+
+Once counted, the statistics are refreshed **incrementally**: only the hashes of the files added to or removed from a version since the last count are recounted, which gives the same result as recounting everything in a fraction of the time. `--refresh --full` recounts everything anyway. The first count, and the first after an upgrade from a database whose statistics were out of date, are always full.
 
 ### `clean`
 

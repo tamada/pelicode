@@ -151,7 +151,7 @@ pelicode stats --refresh          # 集計し直してから表示する
 pelicode stats --top 20 -f json
 ```
 
-集計は自動では更新されません。`crawl` や `index` で追加したあとは、`--refresh` を付けて実行するか、`crawl` / `index` に `--refresh-stats` を付けてください。集計が古いまま `scan` すると警告が出ます。
+集計は自動では更新されません。`crawl` や `index` で追加したあとは、`--refresh` を付けて実行するか、`crawl` / `index` に `--refresh-stats` を付けてください。集計が古いまま `scan` すると警告が出ます。2回目以降の集計では、前回から索引されたもののハッシュだけを数え直します。結果は全体を数え直した場合（`--refresh --full`）と同じです。
 
 ### scan: 類似候補の検索
 
