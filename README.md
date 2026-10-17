@@ -1,83 +1,85 @@
 # pelicode
 
-関数単位でコードの構造的な特徴（AST に基づくハッシュ）を取り出し、公開パッケージのコードと照らし合わせて、**確認が必要な類似コードの候補**を見つけるツールです。
+English | [日本語](README.ja.md)
 
-dependabot が依存ライブラリのバージョンを外部リポジトリと照合するように、pelicode はコミットや PR に含まれる関数を、crates.io や PyPI などで公開されているコードと照合します。AI が生成したコードや外部からの PR に、開発者の知らないうちに他所のコードが紛れ込んでいないかを調べる手がかりにします。
+pelicode extracts structural features of code at the function level (hashes based on the AST) and compares them with the code of published packages to find **similar code that should be reviewed**.
+
+Just as dependabot checks dependency versions against external repositories, pelicode checks the functions in your commits and pull requests against code published on repositories such as PyPI and Maven Central. It helps you notice code from elsewhere that may have slipped in without the developers knowing, for example through AI-generated code or pull requests from outside contributors.
 
 > [!IMPORTANT]
-> pelicode は盗用やライセンス違反を**判定しません**。示すのは、出典とライセンスを添えた「要確認の類似候補」です。流用かどうか、ライセンス上の問題があるかどうかは、人が確認して判断してください。
+> pelicode does **not** decide whether code is plagiarized or violates a license. It shows "similar code candidates to review", together with their sources and licenses. Whether code was reused, and whether that raises a license issue, is for a person to check and decide.
 
-研究用の試作（v0.1）です。設計の詳細は [仕様書](.github/assets/spec.md) にあります。
+This is a research prototype (v0.1). The design is described in the [specification](.github/assets/spec.md) (in Japanese).
 
-## 仕組み
+## How it works
 
 ```mermaid
 flowchart LR
     R[("PyPI / Maven Central<br/>Go proxy / RubyGems")] -->|pelicode crawl| I
-    P["手元のプロジェクト"] -->|pelicode index| I
-    I["関数の抽出・正規化・ハッシュ化"] --> D[("SQLite DB")]
+    P["Local projects"] -->|pelicode index| I
+    I["Extract, normalize and<br/>hash functions"] --> D[("SQLite DB")]
     D -->|pelicode stats --refresh| D
-    T["検査するコード<br/>（ディレクトリ / git の差分）"] -->|pelicode scan| S["類似候補の検索"]
+    T["Code to check<br/>(directory / git diff)"] -->|pelicode scan| S["Search for<br/>similar functions"]
     D --> S
-    S --> O["要確認の類似候補<br/>（text / JSON / CSV）"]
+    S --> O["Similar code candidates<br/>(text / JSON / CSV)"]
 ```
 
-1. **関数の抽出**: [Tree-sitter](https://tree-sitter.github.io/) で構文解析し、関数・メソッド・ラムダなどを1つずつ取り出します。
-2. **正規化**: 表面的な違いを消すため、段階的に抽象化します。
-   - N0: 空白とコメントを除く
-   - N1: 識別子を `$ID`、リテラルを `$STR` や `$NUM` に置き換える
-   - N2: さらに型名を `$TYPE` に置き換える
-   - N3: AST のノードの種類だけを並べる
-3. **ハッシュ化**: 関数全体のハッシュ（完全一致用）と、トークン列の k-gram から winnowing で選んだフィンガープリント（部分一致用）を計算します。後者からは MinHash と LSH のバケットも作ります。
-4. **検索**: 完全一致（N0 → N1 → N2 の順）を探したあと、LSH で候補を絞ります。絞った候補はフィンガープリント集合の Jaccard 係数で比べます。
-5. **ありふれたコードの除外**: 多くのパッケージに現れるハッシュ（getter、`equals`、定型処理など）は流用の証拠にならないので、検索時に除外したり重みを下げたりできます。
+1. **Function extraction**: source files are parsed with [Tree-sitter](https://tree-sitter.github.io/), and functions, methods, lambdas and the like are extracted one by one.
+2. **Normalization**: superficial differences are removed step by step.
+   - N0: whitespace and comments removed
+   - N1: identifiers replaced with `$ID`, literals with `$STR`, `$NUM` and so on
+   - N2: type names also replaced with `$TYPE`
+   - N3: only the kinds of the AST nodes
+3. **Hashing**: pelicode computes a hash of the whole function (for exact matches) and fingerprints selected by winnowing from the k-grams of the token sequence (for partial matches). MinHash signatures and LSH buckets are built from the fingerprints.
+4. **Search**: exact matches are looked up first (N0, then N1, then N2). LSH then narrows down the candidates, which are compared by the Jaccard similarity of their fingerprint sets.
+5. **Filtering common code**: hashes found in many packages (getters, `equals`, boilerplate) are no evidence of copying, so they can be ignored or down-weighted during the search.
 
-ソースコードそのものは DB に保存しません。保存するのはハッシュ、位置（行・バイト範囲）、出典（パッケージ・バージョン・パス・取得元 URL）、ライセンスだけです。
+The database never stores source code. It stores only hashes, locations (lines and byte ranges), sources (package, version, path, download URL) and licenses.
 
-## 対応状況
+## Supported languages and repositories
 
-| 言語 | 拡張子 | Tree-sitter の文法 |
+| Language | Extensions | Tree-sitter grammar |
 | --- | --- | --- |
 | Go | `.go` | tree-sitter-go |
 | Java | `.java` | tree-sitter-java |
-| Kotlin | `.kt`, `.kts` | tree-sitter-kotlin-ng（コミュニティ製） |
+| Kotlin | `.kt`, `.kts` | tree-sitter-kotlin-ng (community-maintained) |
 | Python | `.py` | tree-sitter-python |
 | Ruby | `.rb` | tree-sitter-ruby |
 
-| エコシステム | 取得するもの | 改ざん検査 |
+| Repository | What is fetched | Integrity check |
 | --- | --- | --- |
-| PyPI | sdist（なければ wheel） | SHA-256 |
-| Maven Central | `-sources.jar`（Java と Kotlin） | SHA-1 |
-| Go | モジュールの zip | sum.golang.org の `h1:` ハッシュ |
+| PyPI | sdist (or a wheel when there is none) | SHA-256 |
+| Maven Central | `-sources.jar` (Java and Kotlin) | SHA-1 |
+| Go | module zip | `h1:` hash from sum.golang.org |
 | RubyGems | `.gem` | SHA-256 |
 
-## インストール
+## Installation
 
-Rust 1.90 以降が必要です。
+Rust 1.90 or later is required.
 
 ```bash
 cargo install --path cli
 ```
 
-`pelicode` コマンドが `~/.cargo/bin` に入ります。インストールせずに試す場合は、`pelicode` の代わりに `cargo run --release --` を使ってください。
+This installs the `pelicode` command into `~/.cargo/bin`. To try it without installing, use `cargo run --release --` in place of `pelicode`.
 
-## クイックスタート
+## Quick start
 
 ```bash
-# 1. 公開パッケージを取得して DB（pelicode.db）に索引する
+# 1. Fetch published packages and index them into the database (pelicode.db)
 pelicode crawl pypi requests six
 pelicode crawl maven org.apache.commons:commons-lang3
 pelicode crawl go github.com/google/uuid
 pelicode crawl rubygems rack
 
-# 2. ハッシュごとの出現パッケージ数を集計する
+# 2. Count how many packages contain each hash
 pelicode stats --refresh
 
-# 3. 手元のコードを検査する
+# 3. Check your code
 pelicode scan ./src
 ```
 
-検査の結果は次のように表示されます。
+The result looks like this:
 
 ```
 1 function(s) have similar code candidates to review.
@@ -87,128 +89,128 @@ hex.go:10-44 parseID (tokens=275)
                lines 12-44 <-> 70-108,110-117 (containment 0.89, 80 shared fingerprints)
 ```
 
-1行目は検査した関数の位置と名前です。続く行が候補で、一致の種類（`exact(N1)` なら N1 で完全一致、`similar(N1)` なら N1 で類似）、類似度、出典、ライセンスを示します。その下の `lines` は、一致した部分が両方のコードのどの行にあるかです。
+The first line is the location and name of the checked function. Each following line is a candidate: the kind of match (`exact(N1)` for an exact match after N1 normalization, `similar(N1)` for a similar one), the similarity, the source and the license. The `lines` line shows where the matching parts are in both pieces of code.
 
-## コマンド
+## Commands
 
-| コマンド | 内容 |
+| Command | Description |
 | --- | --- |
-| `pelicode crawl <ECOSYSTEM> [PACKAGES]...` | 公開リポジトリからパッケージを取得して索引する |
-| `pelicode index <PATHS>...` | 手元のディレクトリを1つのパッケージとして索引する |
-| `pelicode stats` | DB の統計と、多くのパッケージに現れるハッシュを表示する |
-| `pelicode scan [PATHS]...` | 類似候補を検索する |
-| `pelicode extract <PATHS>...` | 関数の抽出結果と特徴量を表示する（DB は使わない） |
-| `pelicode export` | DB に入っている関数を一覧する |
-| `pelicode languages` | 対応言語と拡張子を表示する |
+| `pelicode crawl <ECOSYSTEM> [PACKAGES]...` | Fetch packages from a public repository and index them |
+| `pelicode index <PATHS>...` | Index local directories as one package |
+| `pelicode stats` | Show database statistics and the hashes found in the most packages |
+| `pelicode scan [PATHS]...` | Search for similar code candidates |
+| `pelicode extract <PATHS>...` | Show extracted functions and their features (no database) |
+| `pelicode export` | List the functions stored in the database |
+| `pelicode languages` | Show the supported languages and extensions |
 
-どのコマンドも `--db <FILE>` で DB を指定できます（既定は `pelicode.db`）。オプションの一覧は `pelicode <COMMAND> --help` で確認できます。
+Every command that uses a database takes `--db <FILE>` (default: `pelicode.db`). Run `pelicode <COMMAND> --help` for all options.
 
-### crawl: 公開パッケージの取得
+### crawl: fetching published packages
 
 ```bash
 pelicode crawl pypi requests numpy@2.1.0         # NAME[@VERSION]
-pelicode crawl pypi --top 100                    # ダウンロード数の上位 100 件（PyPI のみ）
+pelicode crawl pypi --top 100                    # the 100 most downloaded packages (PyPI only)
 pelicode crawl maven com.google.code.gson:gson:2.11.0
 pelicode crawl go golang.org/x/mod@v0.20.0
 pelicode crawl rubygems thor@1.3.0
-pelicode crawl maven --list packages.txt         # 1行に1パッケージ（# 以降はコメント）
+pelicode crawl maven --list packages.txt         # one package per line; '#' starts a comment
 ```
 
-- バージョンを省くと最新版を取得します。
-- 取得済みのバージョンは飛ばします。取り直すときは `--force` を付けます。
-- アーカイブはディスクに展開せず、メモリ上で読んで捨てます。
-- リクエストは1件ずつ、既定で1秒の間隔を空けて送ります（`--delay-ms`）。大量に取得するときは、`--contact` で連絡先（URL かメールアドレス）を User-Agent に入れてください。
-- 失敗したパッケージは DB に記録されます。1件でも失敗すると終了コードは 1 です。
-- `--top` が使うダウンロード数のランキングは、PyPI 公式ではなく第三者の [hugovk/top-pypi-packages](https://github.com/hugovk/top-pypi-packages) です。
+- Without a version, the latest release is fetched.
+- Versions already in the database are skipped. Use `--force` to fetch them again.
+- Archives are read in memory and discarded; nothing is unpacked to disk.
+- Requests are sent one at a time, by default at least one second apart (`--delay-ms`). When crawling many packages, put a contact URL or e-mail address in the User-Agent with `--contact`.
+- Failures are recorded in the database. If any package fails, the exit status is 1.
+- The download ranking used by `--top` is not an official PyPI service but [hugovk/top-pypi-packages](https://github.com/hugovk/top-pypi-packages).
 
-### index: 手元のプロジェクトの登録
+### index: registering a local project
 
 ```bash
 pelicode index ./my-project --name my-project --version 1.0 --license MIT
 ```
 
-エコシステムは既定で `local` です。複数のディレクトリを渡すと、ファイルのパスの先頭にディレクトリ名が付きます。
+The ecosystem is `local` by default. When several directories are given, file paths are prefixed with the directory names.
 
-### stats: ありふれたハッシュの集計
+### stats: counting common hashes
 
 ```bash
-pelicode stats --refresh          # 集計し直してから表示する
+pelicode stats --refresh          # recount, then show
 pelicode stats --top 20 -f json
 ```
 
-集計は自動では更新されません。`crawl` や `index` で追加したあとは、`--refresh` を付けて実行するか、`crawl` / `index` に `--refresh-stats` を付けてください。集計が古いまま `scan` すると警告が出ます。
+The counts are not updated automatically. After `crawl` or `index`, run `pelicode stats --refresh`, or pass `--refresh-stats` to `crawl` or `index`. `scan` warns when the counts are out of date.
 
-### scan: 類似候補の検索
+### scan: searching for similar code
 
 ```bash
 pelicode scan ./src
-pelicode scan --git main..HEAD                   # main から HEAD までに変更された関数だけ
-pelicode scan --git HEAD                         # 作業ツリーの未コミットの変更だけ
+pelicode scan --git main..HEAD                   # only functions changed between main and HEAD
+pelicode scan --git HEAD                         # only uncommitted changes in the working tree
 pelicode scan ./src -f json -o report.json
-pelicode scan ./src --exclude local:my-project   # 自分自身のパッケージは除く
-pelicode scan ./src --fail-on-match              # 候補があれば終了コード 1（CI 向け）
+pelicode scan ./src --exclude local:my-project   # skip your own package
+pelicode scan ./src --fail-on-match              # exit with status 1 when there are candidates (for CI)
 ```
 
-主なオプションは次のとおりです。
+Main options:
 
-| オプション | 既定値 | 意味 |
+| Option | Default | Meaning |
 | --- | --- | --- |
-| `--threshold` | 0.7 | 報告する類似度の下限 |
-| `--min-tokens` | 50 | これより短い関数は検査しない（短い関数は偶然一致しやすいため） |
-| `--max-candidates` | 5 | 1関数あたりの候補数の上限 |
-| `--stop-packages N` または `P%` | 100 | N 個以上（または全体の P% 以上）のパッケージに現れるハッシュを無視する。0 で無効 |
-| `--min-shared` | 5 | 類似一致とみなすのに必要な共有フィンガープリント数 |
-| `--idf` | 無効 | フィンガープリントを `ln(1 + N / df)` で重み付けする |
+| `--threshold` | 0.7 | Minimum similarity to report |
+| `--min-tokens` | 50 | Shorter functions are not checked (they match by chance too easily) |
+| `--max-candidates` | 5 | Maximum number of candidates per function |
+| `--stop-packages N` or `P%` | 100 | Ignore hashes found in at least N packages (or P% of all packages); 0 disables |
+| `--min-shared` | 5 | Number of shared fingerprints required for a similar match |
+| `--idf` | off | Weight fingerprints by `ln(1 + N / df)` |
 
-`--stop-packages` の既定値 100 は、大規模な DB を前提にしています。パッケージが数十件しかない DB では効かないので、`--stop-packages 40%` のように割合で指定してください。
+The default `--stop-packages 100` assumes a large database. With only a few dozen packages it has no effect, so give a percentage such as `--stop-packages 40%`.
 
-### extract / export: 中身の確認
+### extract / export: looking inside
 
 ```bash
-pelicode extract Foo.java --tokens N1     # N1 に正規化したトークン列も表示する
+pelicode extract Foo.java --tokens N1     # also show the tokens normalized at N1
 pelicode extract ./src -f csv -o functions.csv
 pelicode export -f json
 ```
 
-## 特徴量のパラメータ
+## Feature parameters
 
-`crawl`、`index`、`extract` で指定できます。
+These can be given to `crawl`, `index` and `extract`.
 
-| オプション | 既定値 | 意味 |
+| Option | Default | Meaning |
 | --- | --- | --- |
-| `--kgram` | 10 | フィンガープリントにする k-gram の長さ |
-| `--window` | 4 | winnowing の窓幅 |
-| `--minhash-size` | 128 | MinHash の長さ |
-| `--bands` | 32 | LSH のバンド数（`minhash-size` を割り切れる値） |
-| `--levels` | N1 | フィンガープリントを計算する正規化レベル（`N1,N2` のように複数指定可） |
-| `--ident-mode` | uniform | 識別子をすべて `$ID` にする（`uniform`）か、出現順に `$ID1`, `$ID2`, … と番号を振る（`indexed`） |
-| `--min-tokens` | 50 | これより短い関数は完全一致のハッシュだけを保存する |
+| `--kgram` | 10 | Length of the k-grams turned into fingerprints |
+| `--window` | 4 | Window size of winnowing |
+| `--minhash-size` | 128 | Length of MinHash signatures |
+| `--bands` | 32 | Number of LSH bands (must divide `--minhash-size`) |
+| `--levels` | N1 | Normalization levels with fingerprints (several allowed, such as `N1,N2`) |
+| `--ident-mode` | uniform | Replace every identifier with `$ID` (`uniform`), or number them by first appearance as `$ID1`, `$ID2`, ... (`indexed`) |
+| `--min-tokens` | 50 | Shorter functions get exact hashes only |
 
-DB には作成時のパラメータが記録されます。異なるパラメータで同じ DB に追加しようとするとエラーになります。`scan` は DB に記録されたパラメータを自動で使います。
+The database records the parameters it was built with, and adding to it with different parameters is an error. `scan` uses the parameters recorded in the database automatically.
 
-## 構成
+## Layout
 
-| ディレクトリ | crate | 内容 |
+| Directory | Crate | Contents |
 | --- | --- | --- |
-| [core](core) | pelicode-core | 構文解析、関数抽出、正規化、ハッシュ・フィンガープリント・MinHash |
-| [db](db) | pelicode-db | SQLite への保存、検索用の問い合わせ、ハッシュの集計 |
-| [detect](detect) | pelicode-detect | 類似候補の検索 |
-| [crawl](crawl) | pelicode-crawl | PyPI・Maven Central・Go・RubyGems からの取得 |
-| [cli](cli) | pelicode-cli | `pelicode` コマンド |
+| [core](core) | pelicode-core | Parsing, function extraction, normalization, hashes, fingerprints, MinHash |
+| [db](db) | pelicode-db | SQLite storage, lookups and hash counts |
+| [detect](detect) | pelicode-detect | Search for similar code candidates |
+| [crawl](crawl) | pelicode-crawl | Fetching from PyPI, Maven Central, Go and RubyGems |
+| [cli](cli) | pelicode-cli | The `pelicode` command |
 
 ```bash
-cargo test       # テスト（ネットワークには接続しません）
+cargo test       # tests (no network access)
 cargo clippy --all-targets
 ```
 
-## 未実装のもの
+## Not implemented yet
 
-- GitHub の PR を検査するボット（GitHub Actions / GitHub App）と SARIF 出力
-- 新しく公開されたバージョンの自動検知（現状は、パッケージ名・一覧ファイル・上位 N 件で指定します）
-- 配布用の DB スナップショット（`pelicode snapshot`）と、評価実験用のコマンド（`pelicode eval`）
-- 設定ファイル（`.pelicode.yml`）
-- Go・Maven・RubyGems のダウンロード数上位の取得
+- A bot that checks GitHub pull requests (GitHub Actions / GitHub App) and SARIF output
+- Automatic detection of newly published versions (packages are currently given by name, by a list file or as the top N)
+- Distributable database snapshots (`pelicode snapshot`) and a command for evaluation experiments (`pelicode eval`)
+- A configuration file (`.pelicode.yml`)
+- Fetching the most downloaded packages of Go, Maven Central and RubyGems
 
-## ライセンス
+## License
 
-未定です。
+[MIT](LICENSE)
