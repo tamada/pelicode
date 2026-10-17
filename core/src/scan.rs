@@ -13,9 +13,23 @@ use crate::language::Language;
 #[derive(Debug, Clone)]
 pub struct SourceFile {
     pub path: PathBuf,
-    /// Path relative to the scanned root (the path itself when a file was given).
+    /// Path relative to the scanned root (the path itself when a file was given),
+    /// with `/` as the separator on every platform.
     pub relative: PathBuf,
     pub language: Language,
+}
+
+/// `path` with `/` as the separator, so that the paths recorded in a
+/// database and printed in reports are the same on every platform.
+pub fn slash_path(path: &Path) -> PathBuf {
+    if std::path::MAIN_SEPARATOR == '/' {
+        path.to_path_buf()
+    } else {
+        PathBuf::from(
+            path.to_string_lossy()
+                .replace(std::path::MAIN_SEPARATOR, "/"),
+        )
+    }
 }
 
 /// Lists the files of supported languages under `root`, honoring `.gitignore`.
@@ -25,7 +39,7 @@ pub fn discover(root: &Path) -> Result<Vec<SourceFile>, Error> {
         return Ok(Language::from_path(root)
             .map(|language| SourceFile {
                 path: root.to_path_buf(),
-                relative: root.to_path_buf(),
+                relative: slash_path(root),
                 language,
             })
             .into_iter()
@@ -45,7 +59,7 @@ pub fn discover(root: &Path) -> Result<Vec<SourceFile>, Error> {
         }
         let path = entry.into_path();
         if let Some(language) = Language::from_path(&path) {
-            let relative = path.strip_prefix(root).unwrap_or(&path).to_path_buf();
+            let relative = slash_path(path.strip_prefix(root).unwrap_or(&path));
             files.push(SourceFile {
                 path,
                 relative,

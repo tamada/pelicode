@@ -196,7 +196,9 @@ fn sanitize(path: &Path, strip: usize) -> Option<PathBuf> {
     if parts.is_empty() {
         return None;
     }
-    Some(parts.iter().collect())
+    // `/` on every platform, like the paths of local files (see `slash_path`).
+    let joined: Vec<_> = parts.iter().map(|p| p.to_string_lossy()).collect();
+    Some(PathBuf::from(joined.join("/")))
 }
 
 #[cfg(test)]

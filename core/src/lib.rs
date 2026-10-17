@@ -19,7 +19,7 @@ pub use extract::{
 };
 pub use hash::{Fingerprint, Hash128};
 pub use language::Language;
-pub use scan::{SourceFile, discover, extract_all};
+pub use scan::{SourceFile, discover, extract_all, slash_path};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

@@ -10,7 +10,9 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 use clap::{Args, Parser, Subcommand, ValueEnum};
-use pelicode_core::{Config, FileFeatures, IdentMode, Language, Level, discover, extract_all};
+use pelicode_core::{
+    Config, FileFeatures, IdentMode, Language, Level, discover, extract_all, slash_path,
+};
 use pelicode_db::{Database, PackageInfo};
 
 /// Detects code similar to known open-source code at the function level.
@@ -223,7 +225,7 @@ fn extract_paths(paths: &[PathBuf], config: &Config) -> Result<Vec<FileFeatures>
             match result {
                 Ok(mut file) => {
                     if let Some(prefix) = &prefix {
-                        file.path = prefix.join(&file.path);
+                        file.path = slash_path(&prefix.join(&file.path));
                     }
                     results.push(file);
                 }
