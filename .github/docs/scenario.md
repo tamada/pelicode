@@ -18,7 +18,7 @@ pelicode scan --git origin/main...HEAD --db pelicode.db --fail-on-match
 - **What it finds**: functions in the pull request that are identical or similar to functions of published packages, with the package, version, file, lines and license of each.
 - **What happens next**: a reviewer compares the two, and asks for attribution, a rewrite, or nothing.
 - **Works today**: the command above; with `--fail-on-match`, the job fails when there is something to review. The database, the thresholds and what to leave out can be kept in a `.pelicode.yaml` committed to the repository.
-- **Missing**: a GitHub Action that wraps it, SARIF output to show the candidates in the pull request, and a way for CI to obtain a database (see [Where the database comes from](#where-the-database-comes-from)).
+- **Missing**: a GitHub Action that wraps it (SARIF output for showing the candidates in the pull request is ready: `-f sarif`), and a way for CI to obtain a database (see [Where the database comes from](#where-the-database-comes-from)).
 
 ## 2. Checking code before committing
 
@@ -101,7 +101,7 @@ Scenarios 1 to 3 need a reference database of published code, and building one i
 
 | Scenario | Who | Usable today | Main missing pieces |
 | --- | --- | --- | --- |
-| 1. Pull requests in CI | Maintainers | With a self-built database | GitHub Action, SARIF, a distributed database |
+| 1. Pull requests in CI | Maintainers | With a self-built database | GitHub Action, a distributed database |
 | 2. Before committing | Developers | With a self-built database | A distributed database |
 | 3. License audit | Release managers | With a self-built database | A distributed database |
 | 4. Within an organization | Organizations | Yes | - |

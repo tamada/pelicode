@@ -385,6 +385,8 @@ crawl:
 | Command | text | JSON | CSV |
 | --- | --- | --- | --- |
 | `scan` | Each function with its candidates | Array of reports (all of §7.5) | One row per candidate |
+
+`scan` also writes SARIF 2.1.0 (`-f sarif`), for GitHub code scanning: one result per checked function with candidates, at the level `note`, with the rule `exact-match` or `similar-match` after its best candidate, a message naming the candidate, its source, license and matched lines, all candidates in `properties`, and `partialFingerprints` to track an alert across runs. Paths are relative to the current directory, normally the root of the repository.
 | `extract` | One line per function (tokens with `--tokens`) | All features, per file | One row per function |
 | `export` | One line per occurrence | All fields, per occurrence | One row per occurrence |
 | `index`, `stats` | Summary | Summary | - |
@@ -482,6 +484,7 @@ A command that runs evaluation experiments (`pelicode eval`) is not implemented 
 | Package counts, exclusion of common hashes, IDF | Done (counts rebuilt as a whole) |
 | Checking directories and git ranges; text, JSON and CSV | Done |
 | Settings files in YAML and JSON5 | Done |
+| SARIF output | Done |
 | CI, release, container, documentation site | Done (no release made yet) |
 
 ### 12.2 Not Implemented Yet
@@ -493,7 +496,6 @@ A command that runs evaluation experiments (`pelicode eval`) is not implemented 
 | Snapshots | Creating (`pelicode snapshot`) and distributing databases without source code |
 | Database cleanup | Removing files and functions no longer referenced, and compacting the database |
 | Pull request bot | A GitHub Action showing candidates as check run annotations and a pull request comment; by default it does not block merging (`neutral`) |
-| SARIF output | Integration with GitHub code scanning |
 | Evaluation | `pelicode eval` and the generation of evaluation data (§11.1) |
 | No dependency on the git command | Reading diffs with gix, the Rust implementation of git |
 

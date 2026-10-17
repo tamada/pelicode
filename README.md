@@ -159,6 +159,7 @@ pelicode scan ./src
 pelicode scan --git main..HEAD                   # only functions changed between main and HEAD
 pelicode scan --git HEAD                         # only uncommitted changes in the working tree
 pelicode scan ./src -f json -o report.json
+pelicode scan ./src -f sarif -o pelicode.sarif    # SARIF, for GitHub code scanning
 pelicode scan ./src --exclude local:my-project   # skip your own package
 pelicode scan ./src --fail-on-match              # exit with status 1 when there are candidates (for CI)
 ```
@@ -242,7 +243,7 @@ just --list      # the tasks CI runs (with https://just.systems/)
 
 ## Not implemented yet
 
-- A bot that checks GitHub pull requests (GitHub Actions / GitHub App) and SARIF output
+- A bot that checks GitHub pull requests (GitHub Actions / GitHub App)
 - Automatic detection of newly published versions (packages are currently given by name, by a list file or as the top N)
 - Distributable database snapshots (`pelicode snapshot`) and a command for evaluation experiments (`pelicode eval`)
 - Fetching the most downloaded packages of Go, Maven Central and RubyGems

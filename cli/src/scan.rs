@@ -4,16 +4,16 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
-use clap::Args;
+use clap::{Args, ValueEnum};
 use globset::GlobSet;
-use pelicode_core::{Config, Language, extract_bytes};
+use pelicode_core::{Config, Language, extract_bytes, slash_path};
 use pelicode_db::Database;
 use pelicode_detect::{Candidate, Detector, MatchKind, Options, Report};
 use serde::Serialize;
 
 use crate::git::Changes;
 use crate::settings::{self, Loaded};
-use crate::{Format, extract_paths, open_output};
+use crate::{extract_paths, open_output};
 
 #[derive(Args)]
 pub struct ScanArgs {
@@ -45,9 +45,9 @@ pub struct ScanArgs {
     /// repeatable, added to the settings file's.
     #[arg(long, value_name = "GLOB")]
     exclude_path: Vec<String>,
-    /// Output format.
-    #[arg(short, long, value_enum, default_value_t = Format::Text)]
-    format: Format,
+    /// Output format; sarif is for GitHub code scanning and other SARIF readers.
+    #[arg(short, long, value_enum, default_value_t = ScanFormat::Text)]
+    format: ScanFormat,
     /// Output file (default: standard output).
     #[arg(short, long)]
     output: Option<PathBuf>,
@@ -65,6 +65,58 @@ pub struct ScanArgs {
     /// Weight fingerprints by inverse document frequency.
     #[arg(long)]
     idf: bool,
+}
+
+/// Output formats of `scan`.
+#[derive(Clone, Copy, ValueEnum)]
+enum ScanFormat {
+    Text,
+    Json,
+    Csv,
+    Sarif,
+}
+
+/// The path of a report relative to where pelicode runs, normally the root of
+/// the repository, as SARIF readers expect: the report paths are relative to
+/// the directory given (or to the repository with `--git`).
+fn repository_uri(paths: &[PathBuf], git: bool, report: &Path) -> String {
+    let base: Option<&Path> = match paths {
+        [] => None,
+        [path] if git || path.is_dir() => Some(path),
+        // A single file is reported with the path it was given.
+        [_] => None,
+        // Several paths: the report path starts with the name of its directory.
+        _ => {
+            let first = report.components().next().map(|c| c.as_os_str().to_owned());
+            paths
+                .iter()
+                .filter(|p| p.is_dir())
+                .find(|p| {
+                    p.canonicalize()
+                        .ok()
+                        .and_then(|c| c.file_name().map(|n| n.to_owned()))
+                        == first
+                })
+                .and_then(|p| p.parent())
+        }
+    };
+    let joined = match base {
+        Some(base) => base.join(report),
+        None => report.to_path_buf(),
+    };
+    let relative = match std::env::current_dir() {
+        Ok(cwd) if joined.is_absolute() => joined
+            .strip_prefix(&cwd)
+            .map(Path::to_path_buf)
+            .unwrap_or(joined),
+        _ => joined,
+    };
+    let text = slash_path(&relative).to_string_lossy().into_owned();
+    let mut uri = text.as_str();
+    while let Some(rest) = uri.strip_prefix("./") {
+        uri = rest;
+    }
+    uri.to_string()
 }
 
 /// The options of a scan: the command line, else the settings file, else the defaults.
@@ -255,9 +307,12 @@ pub fn run(args: ScanArgs, settings: Option<&Loaded>) -> Result<bool> {
 
     let mut out = open_output(args.output.as_deref())?;
     match args.format {
-        Format::Text => text(&mut out, &reports)?,
-        Format::Json => crate::output::json(&mut out, &reports)?,
-        Format::Csv => csv(&mut out, &reports)?,
+        ScanFormat::Text => text(&mut out, &reports)?,
+        ScanFormat::Json => crate::output::json(&mut out, &reports)?,
+        ScanFormat::Csv => csv(&mut out, &reports)?,
+        ScanFormat::Sarif => crate::sarif::write(&mut out, &reports, |r| {
+            repository_uri(&args.paths, args.git.is_some(), &r.path)
+        })?,
     }
     out.flush()?;
     Ok(resolved.fail_on_match && !reports.is_empty())

@@ -159,6 +159,7 @@ pelicode scan ./src
 pelicode scan --git main..HEAD                   # main から HEAD までに変更された関数だけ
 pelicode scan --git HEAD                         # 作業ツリーの未コミットの変更だけ
 pelicode scan ./src -f json -o report.json
+pelicode scan ./src -f sarif -o pelicode.sarif    # SARIF（GitHub Code Scanning 向け）
 pelicode scan ./src --exclude local:my-project   # 自分自身のパッケージは除く
 pelicode scan ./src --fail-on-match              # 候補があれば終了コード 1（CI 向け）
 ```
@@ -242,7 +243,7 @@ just --list      # CI が実行するタスクの一覧（https://just.systems/ 
 
 ## 未実装のもの
 
-- GitHub の PR を検査するボット（GitHub Actions / GitHub App）と SARIF 出力
+- GitHub の PR を検査するボット（GitHub Actions / GitHub App）
 - 新しく公開されたバージョンの自動検知（現状は、パッケージ名・一覧ファイル・上位 N 件で指定します）
 - 配布用の DB スナップショット（`pelicode snapshot`）と、評価実験用のコマンド（`pelicode eval`）
 - Go・Maven・RubyGems のダウンロード数上位の取得

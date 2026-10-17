@@ -385,6 +385,8 @@ crawl:
 | コマンド | text | JSON | CSV |
 | --- | --- | --- | --- |
 | `scan` | 関数ごとに候補を列挙 | 関数ごとの報告の配列（§7.5 のすべて） | 候補ごとに1行 |
+
+`scan` は GitHub Code Scanning 向けに SARIF 2.1.0（`-f sarif`）も出力する。候補のある関数1つにつき結果を1つとし、深刻度は `note`、ルールは最良の候補に応じて `exact-match` か `similar-match` とする。メッセージには候補、その出典、ライセンス、一致した行を書き、すべての候補を `properties` に、実行をまたいで同じ指摘を追跡するための `partialFingerprints` を付ける。パスはカレントディレクトリ（通常はリポジトリのルート）からの相対パスとする。
 | `extract` | 関数ごとに1行（`--tokens` で正規化後のトークン列） | ファイルごとの全特徴量 | 関数ごとに1行 |
 | `export` | 出現ごとに1行 | 出現ごとの全項目 | 出現ごとに1行 |
 | `index`、`stats` | 要約 | 要約 | - |
@@ -482,6 +484,7 @@ pelicode-core、pelicode-db、pelicode-detect、pelicode-crawl はライブラ�
 | 出現パッケージ数の集計と、ありふれたハッシュの除外・IDF | 実装済み（集計は全体の作り直し） |
 | ディレクトリ・git の範囲の検査、text / JSON / CSV 出力 | 実装済み |
 | YAML・JSON5 の設定ファイル | 実装済み |
+| SARIF 出力 | 実装済み |
 | CI、リリース、コンテナ、ドキュメントサイト | 実装済み（実際のリリースは未実施） |
 
 ### 12.2 未実装の機能
@@ -493,7 +496,6 @@ pelicode-core、pelicode-db、pelicode-detect、pelicode-crawl はライブラ�
 | スナップショット | ソースコードを含まない配布用 DB の作成（`pelicode snapshot`）と配布 |
 | データベースの掃除 | 参照されなくなったファイル・関数の削除と容量の圧縮 |
 | PR 検査ボット | GitHub Action として提供し、Check Run の注釈と PR へのコメントで候補を示す。既定ではマージを妨げない（`neutral`） |
-| SARIF 出力 | GitHub Code Scanning への連携 |
 | 評価実験 | `pelicode eval` と評価データの生成（§11.1） |
 | git コマンドへの依存の解消 | gix（Rust 実装の git）による差分の取得 |
 

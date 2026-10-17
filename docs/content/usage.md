@@ -168,7 +168,7 @@ pelicode scan [OPTIONS] [PATHS]...
 | `--min-shared <N>` | 5 | Shared fingerprints required for a similar match |
 | `--idf` | | Weight fingerprints by inverse document frequency |
 | `--fail-on-match` | | Exit with status 1 when any candidate is found |
-| `-f, --format <FORMAT>` | `text` | `text`, `json` or `csv` |
+| `-f, --format <FORMAT>` | `text` | `text`, `json`, `csv` or `sarif` |
 | `-o, --output <FILE>` | standard output | Write the result to a file |
 
 ```sh
@@ -178,6 +178,7 @@ pelicode scan --git main...feature                # changed on feature since it 
 pelicode scan --git HEAD                          # uncommitted changes in the working tree
 pelicode scan ./src --exclude local:my-project    # do not report the project itself
 pelicode scan ./src -f json -o report.json
+pelicode scan --git origin/main...HEAD -f sarif -o pelicode.sarif   # for GitHub code scanning
 ```
 
 `scan` reads the feature parameters from the database, so your code is always hashed exactly like the stored code. The search runs in stages:
@@ -352,6 +353,18 @@ The kind of match is `exact(LEVEL)` when the whole function is identical after n
 | `candidates[].occurrence_count` | Number of places it was found |
 
 `extract -f json` writes the full features of every function, including fingerprints, MinHash signatures and LSH buckets, which is useful for research.
+
+### SARIF
+
+`scan -f sarif` writes a [SARIF 2.1.0](https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.html) log, which GitHub code scanning (with `github/codeql-action/upload-sarif`) and other tools read:
+
+- one result per checked function with candidates, located at the function, with the level `note`, since a candidate is something to review rather than a defect;
+- the rule `exact-match` or `similar-match`, after the best candidate;
+- a message naming the best candidate, its package, version, file, lines and license, the matched lines, and the other candidates;
+- the details of every candidate in `properties.candidates`;
+- `partialFingerprints`, so that code scanning keeps one alert for a function across runs even when its lines move.
+
+File paths are written relative to the current directory, which should be the root of the repository: `pelicode scan ./src` reports `src/upload.py`, not `upload.py`.
 
 ### CSV
 

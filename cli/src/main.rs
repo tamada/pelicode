@@ -8,6 +8,7 @@
 mod crawl;
 mod git;
 mod output;
+mod sarif;
 mod scan;
 mod settings;
 mod stats;

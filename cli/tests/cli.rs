@@ -273,3 +273,70 @@ fn settings_files_configure_scan() {
         "{stderr}"
     );
 }
+
+#[test]
+fn sarif_for_code_scanning() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = db_arg(dir.path());
+    pelicode(&["index", FIXTURE, "--db", &db, "--min-tokens", "10"]);
+    let output = pelicode(&[
+        "scan",
+        FIXTURE,
+        "--db",
+        &db,
+        "--min-tokens",
+        "10",
+        "-f",
+        "sarif",
+    ]);
+    let log: serde_json::Value = serde_json::from_str(&output).unwrap();
+
+    assert_eq!(log["version"], "2.1.0");
+    let run = &log["runs"][0];
+    assert_eq!(run["tool"]["driver"]["name"], "pelicode");
+    let rules: Vec<_> = run["tool"]["driver"]["rules"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(rules, ["exact-match", "similar-match"]);
+
+    let results = run["results"].as_array().unwrap();
+    assert!(!results.is_empty());
+    let push = results
+        .iter()
+        .find(|r| {
+            r["properties"]["function"] == "push"
+                && r["locations"][0]["physicalLocation"]["artifactLocation"]["uri"]
+                    .as_str()
+                    .unwrap()
+                    .ends_with(".py")
+        })
+        .unwrap();
+    assert_eq!(push["ruleId"], "exact-match");
+    assert_eq!(push["level"], "note");
+    // Relative to the working directory of the test (the crate), where the fixture lives.
+    assert_eq!(
+        push["locations"][0]["physicalLocation"]["artifactLocation"]["uri"],
+        "tests/fixtures/project/lib/stack.py"
+    );
+    assert_eq!(
+        push["locations"][0]["physicalLocation"]["region"]["startLine"],
+        7
+    );
+    assert!(
+        push["message"]["text"]
+            .as_str()
+            .unwrap()
+            .contains("local:project@unversioned lib/stack.py")
+    );
+    assert_eq!(
+        push["partialFingerprints"]["pelicodeCandidate/v1"]
+            .as_str()
+            .unwrap()
+            .len(),
+        32
+    );
+    assert_eq!(push["properties"]["candidates"][0]["match"], "exact");
+}
