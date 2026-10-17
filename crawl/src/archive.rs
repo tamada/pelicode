@@ -16,12 +16,17 @@ pub const MAX_ENTRY_SIZE: u64 = 8 * 1024 * 1024;
 /// Total uncompressed size read from one archive.
 pub const MAX_TOTAL_SIZE: u64 = 1024 * 1024 * 1024;
 
+/// License files larger than this are not read.
+const MAX_LICENSE_SIZE: u64 = 256 * 1024;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ArchiveKind {
-    /// `.zip`, `.jar`, `.whl`.
+    /// `.zip`, `.jar`, `.whl`, Go module zips.
     Zip,
     /// `.tar.gz`, `.tgz`.
     TarGz,
+    /// RubyGems `.gem`: a plain tar whose `data.tar.gz` holds the files.
+    Gem,
 }
 
 impl ArchiveKind {
@@ -31,6 +36,8 @@ impl ArchiveKind {
             Some(ArchiveKind::Zip)
         } else if name.ends_with(".tar.gz") || name.ends_with(".tgz") {
             Some(ArchiveKind::TarGz)
+        } else if name.ends_with(".gem") {
+            Some(ArchiveKind::Gem)
         } else {
             None
         }
@@ -44,23 +51,105 @@ pub struct Entry {
     pub content: Vec<u8>,
 }
 
-/// Source files of supported languages in `bytes`. With `strip_top`, the
-/// first path component (`name-1.0/` of an sdist) is removed.
-pub fn read(kind: ArchiveKind, bytes: &[u8], strip_top: bool) -> Result<Vec<Entry>, Error> {
-    let mut entries = Vec::new();
-    let mut total = 0u64;
-    let mut accept = |raw: &Path, size: u64, read: &mut dyn Read| -> Result<(), Error> {
-        let Some(path) = sanitize(raw, strip_top) else {
+/// What pelicode needs from an archive.
+#[derive(Default)]
+pub struct Contents {
+    /// Source files of supported languages, sorted by path.
+    pub sources: Vec<Entry>,
+    /// Texts of top-level `LICENSE*`, `LICENCE*` and `COPYING*` files.
+    pub license_texts: Vec<String>,
+}
+
+/// Reads `bytes`, dropping the first `strip` path components of every entry
+/// (`name-1.0/` of an sdist, `module@version/` of a Go module).
+pub fn read(kind: ArchiveKind, bytes: &[u8], strip: usize) -> Result<Contents, Error> {
+    let mut collector = Collector {
+        strip,
+        total: 0,
+        contents: Contents::default(),
+    };
+    match kind {
+        ArchiveKind::Zip => {
+            let mut zip = zip::ZipArchive::new(Cursor::new(bytes)).map_err(archive_error)?;
+            for i in 0..zip.len() {
+                let mut file = zip.by_index(i).map_err(archive_error)?;
+                if !file.is_file() {
+                    continue;
+                }
+                let name = PathBuf::from(file.name().map_err(archive_error)?.into_owned());
+                let size = file.size();
+                collector.accept(&name, size, &mut file)?;
+            }
+        }
+        ArchiveKind::TarGz => {
+            let mut tar = tar::Archive::new(GzDecoder::new(bytes));
+            for entry in tar.entries().map_err(archive_error)? {
+                let mut entry = entry.map_err(archive_error)?;
+                if !entry.header().entry_type().is_file() {
+                    continue;
+                }
+                let name = entry.path().map_err(archive_error)?.into_owned();
+                let size = entry.size();
+                collector.accept(&name, size, &mut entry)?;
+            }
+        }
+        ArchiveKind::Gem => {
+            let mut tar = tar::Archive::new(bytes);
+            for entry in tar.entries().map_err(archive_error)? {
+                let mut entry = entry.map_err(archive_error)?;
+                if entry.path().map_err(archive_error)?.as_ref() != Path::new("data.tar.gz") {
+                    continue;
+                }
+                let mut data = Vec::new();
+                entry.read_to_end(&mut data).map_err(archive_error)?;
+                return read(ArchiveKind::TarGz, &data, strip);
+            }
+            return Err(Error::Archive("no data.tar.gz in gem".into()));
+        }
+    }
+    collector
+        .contents
+        .sources
+        .sort_by(|a, b| a.path.cmp(&b.path));
+    Ok(collector.contents)
+}
+
+fn archive_error(e: impl std::fmt::Display) -> Error {
+    Error::Archive(e.to_string())
+}
+
+struct Collector {
+    strip: usize,
+    total: u64,
+    contents: Contents,
+}
+
+impl Collector {
+    fn accept(&mut self, raw: &Path, size: u64, read: &mut dyn Read) -> Result<(), Error> {
+        let Some(path) = sanitize(raw, self.strip) else {
             return Ok(());
         };
+        if is_license_file(&path) {
+            if size <= MAX_LICENSE_SIZE {
+                let mut text = String::new();
+                if read
+                    .take(MAX_LICENSE_SIZE)
+                    .read_to_string(&mut text)
+                    .is_ok()
+                {
+                    self.contents.license_texts.push(text);
+                }
+            }
+            return Ok(());
+        }
         let Some(language) = Language::from_path(&path) else {
             return Ok(());
         };
         if size > MAX_ENTRY_SIZE {
             return Ok(());
         }
-        total += size;
-        if total > MAX_TOTAL_SIZE {
+        self.total += size;
+        if self.total > MAX_TOTAL_SIZE {
             return Err(Error::Archive(format!(
                 "more than {MAX_TOTAL_SIZE} bytes of source files"
             )));
@@ -68,57 +157,33 @@ pub fn read(kind: ArchiveKind, bytes: &[u8], strip_top: bool) -> Result<Vec<Entr
         let mut content = Vec::with_capacity(size as usize);
         read.take(MAX_ENTRY_SIZE + 1)
             .read_to_end(&mut content)
-            .map_err(|e| Error::Archive(e.to_string()))?;
+            .map_err(archive_error)?;
         if content.len() as u64 <= MAX_ENTRY_SIZE {
-            entries.push(Entry {
+            self.contents.sources.push(Entry {
                 path,
                 language,
                 content,
             });
         }
         Ok(())
-    };
-
-    match kind {
-        ArchiveKind::Zip => {
-            let mut zip = zip::ZipArchive::new(Cursor::new(bytes))
-                .map_err(|e| Error::Archive(e.to_string()))?;
-            for i in 0..zip.len() {
-                let mut file = zip.by_index(i).map_err(|e| Error::Archive(e.to_string()))?;
-                if !file.is_file() {
-                    continue;
-                }
-                let name = PathBuf::from(
-                    file.name()
-                        .map_err(|e| Error::Archive(e.to_string()))?
-                        .into_owned(),
-                );
-                let size = file.size();
-                accept(&name, size, &mut file)?;
-            }
-        }
-        ArchiveKind::TarGz => {
-            let mut tar = tar::Archive::new(GzDecoder::new(bytes));
-            for entry in tar.entries().map_err(|e| Error::Archive(e.to_string()))? {
-                let mut entry = entry.map_err(|e| Error::Archive(e.to_string()))?;
-                if !entry.header().entry_type().is_file() {
-                    continue;
-                }
-                let name = entry
-                    .path()
-                    .map_err(|e| Error::Archive(e.to_string()))?
-                    .into_owned();
-                let size = entry.size();
-                accept(&name, size, &mut entry)?;
-            }
-        }
     }
-    entries.sort_by(|a, b| a.path.cmp(&b.path));
-    Ok(entries)
+}
+
+fn is_license_file(path: &Path) -> bool {
+    path.components().count() == 1
+        && path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|name| {
+                let upper = name.to_ascii_uppercase();
+                ["LICENSE", "LICENCE", "COPYING"]
+                    .iter()
+                    .any(|prefix| upper.starts_with(prefix))
+            })
 }
 
 /// A relative path without `..`, or `None` for anything suspicious.
-fn sanitize(path: &Path, strip_top: bool) -> Option<PathBuf> {
+fn sanitize(path: &Path, strip: usize) -> Option<PathBuf> {
     let mut parts = Vec::new();
     for component in path.components() {
         match component {
@@ -127,11 +192,7 @@ fn sanitize(path: &Path, strip_top: bool) -> Option<PathBuf> {
             _ => return None,
         }
     }
-    let parts = if strip_top {
-        parts.get(1..)?
-    } else {
-        &parts[..]
-    };
+    let parts = parts.get(strip..)?;
     if parts.is_empty() {
         return None;
     }
@@ -179,7 +240,7 @@ mod tests {
             ("org/example/A.java", "class A {}"),
             ("org/example/B.kt", "class B"),
         ]);
-        let entries = read(ArchiveKind::Zip, &bytes, false).unwrap();
+        let entries = read(ArchiveKind::Zip, &bytes, 0).unwrap().sources;
         let paths: Vec<_> = entries.iter().map(|e| e.path.to_str().unwrap()).collect();
         assert_eq!(paths, ["org/example/A.java", "org/example/B.kt"]);
         assert_eq!(entries[1].language, Language::Kotlin);
@@ -191,7 +252,7 @@ mod tests {
             ("demo-1.0/demo/__init__.py", "x = 1"),
             ("demo-1.0/PKG-INFO", ""),
         ]);
-        let entries = read(ArchiveKind::TarGz, &bytes, true).unwrap();
+        let entries = read(ArchiveKind::TarGz, &bytes, 1).unwrap().sources;
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].path, Path::new("demo/__init__.py"));
         assert_eq!(entries[0].content, b"x = 1");
@@ -199,12 +260,39 @@ mod tests {
 
     #[test]
     fn rejects_suspicious_paths() {
-        assert_eq!(sanitize(Path::new("../etc/x.py"), false), None);
-        assert_eq!(sanitize(Path::new("/abs/x.py"), false), None);
-        assert_eq!(sanitize(Path::new("top"), true), None);
+        assert_eq!(sanitize(Path::new("../etc/x.py"), 0), None);
+        assert_eq!(sanitize(Path::new("/abs/x.py"), 0), None);
+        assert_eq!(sanitize(Path::new("top"), 1), None);
         assert_eq!(
-            sanitize(Path::new("./a/b.py"), false),
+            sanitize(Path::new("./a/b.py"), 0),
             Some(PathBuf::from("a/b.py"))
         );
+        assert_eq!(
+            sanitize(Path::new("github.com/x/y@v1.0.0/a.go"), 3),
+            Some(PathBuf::from("a.go"))
+        );
+    }
+
+    #[test]
+    fn reads_gems_and_license_files() {
+        let data = tar_gz_of(&[
+            ("lib/rack.rb", "module Rack; end"),
+            ("MIT-LICENSE", "not matched"),
+            ("LICENSE.md", "MIT License"),
+            ("lib/LICENSE", "nested, ignored"),
+        ]);
+        let mut gem = tar::Builder::new(Vec::new());
+        for (name, content) in [("metadata.gz", &b"x"[..]), ("data.tar.gz", &data[..])] {
+            let mut header = tar::Header::new_gnu();
+            header.set_size(content.len() as u64);
+            header.set_mode(0o644);
+            header.set_cksum();
+            gem.append_data(&mut header, name, content).unwrap();
+        }
+        let gem = gem.into_inner().unwrap();
+        let contents = read(ArchiveKind::Gem, &gem, 0).unwrap();
+        assert_eq!(contents.sources.len(), 1);
+        assert_eq!(contents.sources[0].path, Path::new("lib/rack.rb"));
+        assert_eq!(contents.license_texts, ["MIT License"]);
     }
 }

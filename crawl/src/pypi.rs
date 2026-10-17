@@ -90,9 +90,9 @@ pub fn parse_release(json: &Value) -> Result<Release, Error> {
         .find(|f| filename(f).ends_with("-none-any.whl"))
         .or(wheels.first())
         .copied();
-    let (file, strip_top) = match (sdist, wheel) {
-        (Some(f), _) => (*f, true),
-        (None, Some(f)) => (*f, false),
+    let (file, strip_components) = match (sdist, wheel) {
+        (Some(f), _) => (*f, 1),
+        (None, Some(f)) => (*f, 0),
         (None, None) => {
             return Err(Error::NoSources(format!(
                 "{name} {version}: no sdist or wheel"
@@ -117,7 +117,7 @@ pub fn parse_release(json: &Value) -> Result<Release, Error> {
             archive_sha256: None,
         },
         archive_kind,
-        strip_top,
+        strip_components,
         digest: file["digests"]["sha256"]
             .as_str()
             .map(|d| Digest::Sha256(d.to_ascii_lowercase())),
@@ -223,7 +223,7 @@ mod tests {
             Some("https://files/demo.tar.gz")
         );
         assert_eq!(r.archive_kind, ArchiveKind::TarGz);
-        assert!(r.strip_top);
+        assert_eq!(r.strip_components, 1);
         assert_eq!(r.digest, Some(Digest::Sha256("bb".into())));
     }
 
@@ -244,6 +244,6 @@ mod tests {
             Some("https://files/any.whl")
         );
         assert_eq!(r.package.license_spdx.as_deref(), Some("Apache-2.0"));
-        assert!(!r.strip_top);
+        assert_eq!(r.strip_components, 0);
     }
 }

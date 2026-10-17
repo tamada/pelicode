@@ -174,7 +174,7 @@ getter/setter、`equals`/`hashCode`、定型的な例外処理など、多数の
 | RubyGems | Ruby | `.gem` アーカイブ | RubyGems API、公式 DB ダンプ |
 | GitHub（任意） | 全言語 | 指定リポジトリのタグ | GitHub API |
 
-- 初期段階では Maven Central と PyPI（詳細評価の対象言語）から始め、Go Module Proxy と RubyGems を順次追加する。
+- 初期段階では Maven Central と PyPI（詳細評価の対象言語）から始め、Go Module Proxy と RubyGems を順次追加する（v0.1 で 4 つとも実装済み）。
 - Maven Central の `-sources.jar` には Java と Kotlin のソースが混在し得るため、拡張子（`.java` / `.kt`）で言語を判定する。
 - エコシステムごとの取得処理はプラグイン（アダプタ）として実装し、共通インタフェース `list_updates(since) → [PackageVersion]`、`fetch(PackageVersion) → Archive` を持つ。
 
@@ -190,18 +190,19 @@ getter/setter、`equals`/`hashCode`、定型的な例外処理など、多数の
 
 ### 5.3 実装（v0.1）
 
-| 項目 | PyPI | Maven Central |
-| --- | --- | --- |
-| バージョンの解決 | JSON API（`/pypi/<name>/json`） | `maven-metadata.xml` の `release` |
-| 取得対象 | sdist（`.tar.gz` / `.zip`）。なければ `py3-none-any` などの wheel | `<artifact>-<version>-sources.jar` |
-| 改ざん検査 | API が示す SHA-256 と照合 | `.sha1` と照合 |
-| ライセンス | `license_expression`（PEP 639）→ classifier → `license`（短いもの） | POM の `<licenses>`。なければ `<parent>` を最大 5 段たどる |
-| 公開日時 | ファイルの `upload_time_iso_8601` | sources jar の `Last-Modified` |
-| リポジトリ URL | `project_urls`（Source, Repository など） | POM の `<scm><url>` または `<url>` |
-| パッケージ名 | PEP 503 で正規化した名前 | `groupId:artifactId` |
-| 上位 N 件 | hugovk/top-pypi-packages（過去 30 日のダウンロード数） | なし（一覧ファイルで指定） |
+| 項目 | PyPI | Maven Central | Go | RubyGems |
+| --- | --- | --- | --- | --- |
+| バージョンの解決 | JSON API（`/pypi/<name>/json`） | `maven-metadata.xml` の `release` | module proxy の `@latest` / `@v/<version>.info` | `/api/v1/gems/<name>.json` / `/api/v2/rubygems/<name>/versions/<version>.json` |
+| 取得対象 | sdist（`.tar.gz` / `.zip`）。なければ `py3-none-any` などの wheel | `<artifact>-<version>-sources.jar` | module zip（`@v/<version>.zip`） | `.gem`（内部の `data.tar.gz`） |
+| 改ざん検査 | API が示す SHA-256 と照合 | `.sha1` と照合 | sum.golang.org の `h1:` ハッシュ（dirhash）と照合 | API が示す SHA-256 と照合 |
+| ライセンス | `license_expression`（PEP 639）→ classifier → `license`（短いもの） | POM の `<licenses>`。なければ `<parent>` を最大 5 段たどる | 宣言がないため、最上位の `LICENSE*` / `COPYING*` の本文から判定 | `licenses` |
+| 公開日時 | ファイルの `upload_time_iso_8601` | sources jar の `Last-Modified` | `.info` の `Time` | `version_created_at` |
+| リポジトリ URL | `project_urls`（Source, Repository など） | POM の `<scm><url>` または `<url>` | `.info` の `Origin.URL`。なければ github.com などのモジュールパスから | `source_code_uri` → `homepage_uri` |
+| パッケージ名 | PEP 503 で正規化した名前 | `groupId:artifactId` | モジュールパス（大文字は proxy で `!` + 小文字にエスケープ） | gem 名 |
+| 上位 N 件 | hugovk/top-pypi-packages（過去 30 日のダウンロード数） | なし（一覧ファイルで指定） | なし（一覧ファイルで指定） | なし（一覧ファイルで指定） |
 
-- ライセンスは、よく使われる表記だけを SPDX 識別子に変換する。変換できない場合は宣言された文字列をそのまま記録する。
+- ライセンスは、よく使われる表記だけを SPDX 識別子に変換する。変換できない場合は宣言された文字列をそのまま記録する。メタデータに宣言がない場合（Go モジュールなど）は、アーカイブ最上位のライセンスファイルの本文を既知の文言と照らして判定する（Apache-2.0, MIT, BSD-2/3-Clause, ISC, MPL-2.0, GPL/LGPL, Unlicense）。
+- Go module zip の各エントリは `<module>@<version>/` で始まるため、モジュールパスの要素数だけ先頭を取り除く。
 - 上限: アーカイブ 512MB、展開後のソース合計 1GB、1 エントリ 8MB（超えるエントリは生成コードの可能性が高いため読み飛ばす）。
 - HTTP: 直列に取得し、リクエストの間隔を空ける（既定 1 秒）。429・5xx・通信エラーは指数バックオフで最大 4 回まで試す。
 - 取得状況は `package_version.status`（`indexed` / `failed`）と `error` に記録する。既定では `indexed` のバージョンを再取得しない（`--force` で再索引）。
@@ -321,6 +322,8 @@ pelicode crawl pypi requests numpy@2.1.0 --db pelicode.db
 pelicode crawl pypi --top 1000 --contact https://example.org/pelicode
 pelicode crawl maven org.apache.commons:commons-lang3 com.google.code.gson:gson:2.11.0
 pelicode crawl maven --list maven-packages.txt
+pelicode crawl go github.com/google/uuid golang.org/x/mod@v0.20.0
+pelicode crawl rubygems rack thor@1.3.0
 pelicode index   ./project --db pelicode.db --name demo --version 1.0
 pelicode stats   --db pelicode.db --refresh             # 文書頻度の再集計と、ありふれたハッシュの一覧
 pelicode scan    --db pelicode.db ./src --stop-packages 10% --idf

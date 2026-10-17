@@ -108,7 +108,7 @@ pub fn resolve(
             archive_sha256: None,
         },
         archive_kind: ArchiveKind::Zip,
-        strip_top: false,
+        strip_components: 0,
         digest,
     })
 }

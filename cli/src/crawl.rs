@@ -12,9 +12,10 @@ use crate::FeatureArgs;
 
 #[derive(Args)]
 pub struct CrawlArgs {
-    /// Repository to crawl: pypi or maven.
+    /// Repository to crawl: pypi, maven, go or rubygems.
     ecosystem: Ecosystem,
-    /// Packages: NAME[@VERSION] for pypi, GROUP:ARTIFACT[:VERSION] for maven.
+    /// Packages: NAME[@VERSION] for pypi and rubygems, GROUP:ARTIFACT[:VERSION] for maven,
+    /// MODULE[@VERSION] for go.
     packages: Vec<String>,
     /// File listing packages, one per line (`#` starts a comment).
     #[arg(long)]

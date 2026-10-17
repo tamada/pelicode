@@ -633,6 +633,7 @@ dependencies = [
 name = "pelicode-crawl"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "flate2",
  "httpdate",
  "humantime",
@@ -643,6 +644,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha1",
+ "sha2",
  "tar",
  "thiserror",
  "ureq",

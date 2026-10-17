@@ -2,9 +2,12 @@
 //! their functions (spec §5).
 
 pub mod archive;
+pub mod go;
 pub mod http;
+pub mod license;
 pub mod maven;
 pub mod pypi;
+pub mod rubygems;
 
 use std::fmt;
 use std::str::FromStr;
@@ -45,6 +48,8 @@ pub enum Error {
 pub enum Ecosystem {
     PyPI,
     Maven,
+    Go,
+    RubyGems,
 }
 
 impl Ecosystem {
@@ -52,6 +57,8 @@ impl Ecosystem {
         match self {
             Ecosystem::PyPI => pypi::ECOSYSTEM,
             Ecosystem::Maven => maven::ECOSYSTEM,
+            Ecosystem::Go => go::ECOSYSTEM,
+            Ecosystem::RubyGems => rubygems::ECOSYSTEM,
         }
     }
 }
@@ -69,6 +76,8 @@ impl FromStr for Ecosystem {
         match s.to_ascii_lowercase().as_str() {
             "pypi" => Ok(Ecosystem::PyPI),
             "maven" => Ok(Ecosystem::Maven),
+            "go" => Ok(Ecosystem::Go),
+            "rubygems" | "gem" => Ok(Ecosystem::RubyGems),
             _ => Err(Error::InvalidPackage(format!("unknown ecosystem: {s}"))),
         }
     }
@@ -79,6 +88,8 @@ impl FromStr for Ecosystem {
 pub enum Digest {
     Sha256(String),
     Sha1(String),
+    /// Go checksum database `h1:` hash of the module zip.
+    GoH1(String),
 }
 
 /// A package version whose sources can be fetched.
@@ -86,8 +97,9 @@ pub enum Digest {
 pub struct Release {
     pub package: PackageInfo,
     pub archive_kind: archive::ArchiveKind,
-    /// Whether the archive has a top directory to drop (sdists).
-    pub strip_top: bool,
+    /// Leading path components to drop from archive entries
+    /// (`name-1.0/` of an sdist, `module@version/` of a Go module).
+    pub strip_components: usize,
     pub digest: Option<Digest>,
 }
 
@@ -169,6 +181,8 @@ impl Crawler {
                 let version = version.map(String::from).or(v);
                 maven::resolve(&self.client, &coords, version.as_deref())
             }
+            Ecosystem::Go => go::resolve(&self.client, name, version),
+            Ecosystem::RubyGems => rubygems::resolve(&self.client, name, version),
         }
     }
 
@@ -180,33 +194,26 @@ impl Crawler {
             .ok_or_else(|| Error::NoSources(package.name.clone()))?;
         let response = self.client.get(&url, MAX_ARCHIVE_SIZE)?;
         let sha256 = pelicode_core::extract::sha256_hex(&response.body);
-        match &release.digest {
-            Some(Digest::Sha256(expected)) if *expected != sha256 => {
-                return Err(Error::DigestMismatch {
-                    expected: expected.clone(),
-                    actual: sha256,
-                });
-            }
-            Some(Digest::Sha1(expected)) => {
-                let actual = pelicode_core::hash::to_hex(&Sha1::digest(&response.body));
-                if *expected != actual {
-                    return Err(Error::DigestMismatch {
-                        expected: expected.clone(),
-                        actual,
-                    });
-                }
-            }
-            _ => {}
+        if let Some(digest) = &release.digest {
+            verify(digest, &response.body, &sha256)?;
         }
         package.archive_sha256 = Some(sha256);
         if package.published_at.is_none() {
             package.published_at = response.last_modified;
         }
 
-        let entries = archive::read(release.archive_kind, &response.body, release.strip_top)?;
+        let contents = archive::read(
+            release.archive_kind,
+            &response.body,
+            release.strip_components,
+        )?;
         drop(response.body);
+        if package.license_spdx.is_none() {
+            package.license_spdx = license::identify_all(&contents.license_texts);
+        }
         let config = &self.config;
-        let results: Vec<Result<FileFeatures, pelicode_core::Error>> = entries
+        let results: Vec<Result<FileFeatures, pelicode_core::Error>> = contents
+            .sources
             .par_iter()
             .map(|e| extract_bytes(&e.path, e.language, &e.content, config))
             .collect();
@@ -219,4 +226,20 @@ impl Crawler {
             failed_files,
         })
     }
+}
+
+/// Checks a downloaded archive against the digest published by its repository.
+fn verify(digest: &Digest, body: &[u8], sha256: &str) -> Result<(), Error> {
+    let (expected, actual) = match digest {
+        Digest::Sha256(expected) => (expected, sha256.to_string()),
+        Digest::Sha1(expected) => (expected, pelicode_core::hash::to_hex(&Sha1::digest(body))),
+        Digest::GoH1(expected) => (expected, go::dirhash_h1(body)?),
+    };
+    if *expected != actual {
+        return Err(Error::DigestMismatch {
+            expected: expected.clone(),
+            actual,
+        });
+    }
+    Ok(())
 }
