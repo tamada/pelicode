@@ -31,9 +31,11 @@ pub enum Error {
     InvalidMeta(String),
 }
 
+mod clean;
 mod query;
 mod stats;
 
+pub use clean::CleanSummary;
 pub use query::{FunctionInfo, Occurrence, StoredFingerprint};
 pub use stats::{CommonHash, HashStatsInfo};
 
@@ -1067,6 +1069,34 @@ class A {
                 .all(|c| c.package_count == 2 && c.sample.is_some())
         );
         assert!(!db.common_fingerprints(Level::N1, 10).unwrap().is_empty());
+    }
+
+    #[test]
+    fn clean_keeps_files_linked_elsewhere() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut db = Database::open(dir.path().join("t.db"), &Config::default()).unwrap();
+        db.index(&pkg("1.0"), &[file("A.java")]).unwrap();
+        db.index(&pkg("2.0"), &[file("A.java")]).unwrap();
+        // 1.0 no longer has the file, but 2.0 still does.
+        db.index(&pkg("1.0"), &[]).unwrap();
+        assert_eq!(db.unreferenced().unwrap(), CleanSummary::default());
+        assert_eq!(db.clean().unwrap(), CleanSummary::default());
+        assert_eq!(db.stats().unwrap().functions, 3);
+
+        db.index(&pkg("2.0"), &[]).unwrap();
+        let removed = db.clean().unwrap();
+        assert_eq!((removed.files, removed.functions), (1, 3));
+        let left: i64 = db
+            .conn
+            .query_row(
+                "SELECT (SELECT COUNT(*) FROM exact_hash) + (SELECT COUNT(*) FROM fingerprint)
+                      + (SELECT COUNT(*) FROM minhash) + (SELECT COUNT(*) FROM lsh_bucket)",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(left, 0);
+        db.vacuum().unwrap();
     }
 
     #[test]

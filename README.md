@@ -108,6 +108,7 @@ The first line is the location and name of the checked function. Each following 
 | `pelicode crawl <ECOSYSTEM> [PACKAGES]...` | Fetch packages from a public repository and index them |
 | `pelicode index <PATHS>...` | Index local directories as one package |
 | `pelicode stats` | Show database statistics and the hashes found in the most packages |
+| `pelicode clean` | Remove data no longer referenced, and shrink the database |
 | `pelicode scan [PATHS]...` | Search for similar code candidates |
 | `pelicode extract <PATHS>...` | Show extracted functions and their features (no database) |
 | `pelicode export` | List the functions stored in the database |

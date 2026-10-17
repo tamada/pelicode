@@ -340,3 +340,59 @@ fn sarif_for_code_scanning() {
     );
     assert_eq!(push["properties"]["candidates"][0]["match"], "exact");
 }
+
+#[test]
+fn clean_removes_unreferenced_functions() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = db_arg(dir.path());
+    let src = format!("{FIXTURE}/src");
+    let lib = format!("{FIXTURE}/lib");
+    pelicode(&[
+        "index",
+        &src,
+        "--db",
+        &db,
+        "--name",
+        "demo",
+        "--version",
+        "1.0",
+    ]);
+    // The same version again, with other files: those of src are left behind.
+    pelicode(&[
+        "index",
+        &lib,
+        "--db",
+        &db,
+        "--name",
+        "demo",
+        "--version",
+        "1.0",
+    ]);
+
+    let dry: serde_json::Value = serde_json::from_str(&pelicode(&[
+        "clean",
+        "--db",
+        &db,
+        "--dry-run",
+        "-f",
+        "json",
+    ]))
+    .unwrap();
+    assert_eq!(dry["removed"]["files"], 3);
+    let done: serde_json::Value =
+        serde_json::from_str(&pelicode(&["clean", "--db", &db, "-f", "json"])).unwrap();
+    assert_eq!(done["removed"], dry["removed"]);
+    assert!(done["size_after"].as_u64() <= done["size_before"].as_u64());
+    let again: serde_json::Value =
+        serde_json::from_str(&pelicode(&["clean", "--db", &db, "-f", "json"])).unwrap();
+    assert_eq!(again["removed"]["files"], 0);
+
+    let rows: serde_json::Value =
+        serde_json::from_str(&pelicode(&["export", "--db", &db, "-f", "json"])).unwrap();
+    assert!(
+        rows.as_array()
+            .unwrap()
+            .iter()
+            .all(|r| r["path"] == "stack.py")
+    );
+}

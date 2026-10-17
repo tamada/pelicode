@@ -237,6 +237,10 @@ For each hash, the number of packages containing it (several versions of a packa
 
 ---
 
+### 5.5 Cleanup
+
+Indexing a version again replaces its file list, which may leave files that no version links to. `pelicode clean` removes them with their functions, exact hashes, fingerprints, MinHash signatures and LSH buckets, in one transaction, then gives the space back with SQLite `VACUUM` (with a checkpoint of the write-ahead log before and after). The hash statistics need no recount, since they count linked files only.
+
 ## 6. Collection (pelicode-crawl)
 
 ### 6.1 Common Steps
@@ -348,6 +352,7 @@ Reports speak of "similar code candidates to review", never of plagiarism or inf
 | `pelicode crawl <ECOSYSTEM> [PACKAGES]...` | Fetch packages from a public repository and index them (§6) |
 | `pelicode index <PATHS>...` | Index local directories as one package version; the ecosystem is `local` by default |
 | `pelicode stats` | Show database statistics and the most common hashes; `--refresh` recounts them |
+| `pelicode clean` | Remove files and functions no version refers to any more, then shrink the file (`--dry-run` only counts them) |
 | `pelicode scan [PATHS]...` | Search for candidates (§7) |
 | `pelicode extract <PATHS>...` | Show functions and their features, without a database |
 | `pelicode export` | List the functions stored in a database |
@@ -498,6 +503,7 @@ A command that runs evaluation experiments (`pelicode eval`) is not implemented 
 | Settings files in YAML and JSON5 | Done |
 | SARIF output | Done |
 | GitHub Action for pull requests | Done |
+| Database cleanup (`pelicode clean`) | Done |
 | CI, release, container, documentation site | Done (no release made yet) |
 
 ### 12.2 Not Implemented Yet
@@ -507,7 +513,6 @@ A command that runs evaluation experiments (`pelicode eval`) is not implemented 
 | Incremental package counts | Recount only the hashes of versions added or replaced since the last count |
 | Detection of new versions | `list_updates(since)` with the RSS feeds of crates.io, PyPI updates, index.golang.org, ... |
 | Snapshots | Creating (`pelicode snapshot`) and distributing databases without source code |
-| Database cleanup | Removing files and functions no longer referenced, and compacting the database |
 | Evaluation | `pelicode eval` and the generation of evaluation data (§11.1) |
 | No dependency on the git command | Reading diffs with gix, the Rust implementation of git |
 

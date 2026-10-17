@@ -54,6 +54,9 @@ enum Command {
     Crawl(crawl::CrawlArgs),
     /// Shows database statistics and the hashes shared by the most packages.
     Stats(stats::StatsArgs),
+    /// Removes files and functions no package version refers to any more, and shrinks the
+    /// database file.
+    Clean(CleanArgs),
     /// Lists the supported languages and their file extensions.
     Languages,
 }
@@ -165,6 +168,23 @@ struct ExportArgs {
     output: Option<PathBuf>,
 }
 
+#[derive(Args)]
+struct CleanArgs {
+    /// Database file [default: `database` of the settings file, else pelicode.db].
+    #[arg(long)]
+    db: Option<PathBuf>,
+    /// Only report what would be removed.
+    #[arg(long)]
+    dry_run: bool,
+    /// Do not shrink the database file afterwards (VACUUM needs as much free disk space as the
+    /// database takes).
+    #[arg(long)]
+    no_vacuum: bool,
+    /// Format of the summary.
+    #[arg(short, long, value_enum, default_value_t = SummaryFormat::Text)]
+    format: SummaryFormat,
+}
+
 #[derive(Clone, Copy, ValueEnum)]
 enum Format {
     Text,
@@ -211,6 +231,7 @@ fn run(cli: Cli) -> Result<()> {
         Command::Extract(args) => extract(args),
         Command::Export(args) => export(args, settings),
         Command::Stats(args) => stats::run(args, settings),
+        Command::Clean(args) => clean(args, settings),
         Command::Crawl(args) => {
             if !crawl::run(args, settings)? {
                 std::process::exit(1);
@@ -263,6 +284,61 @@ fn extract_paths(paths: &[PathBuf], config: &Config) -> Result<Vec<FileFeatures>
         }
     }
     Ok(results)
+}
+
+/// Size of an SQLite database with its write-ahead log, in bytes.
+fn database_size(path: &Path) -> u64 {
+    let size = |p: &Path| std::fs::metadata(p).map(|m| m.len()).unwrap_or(0);
+    let mut wal = path.as_os_str().to_owned();
+    wal.push("-wal");
+    size(path) + size(Path::new(&wal))
+}
+
+/// `pelicode clean`: removes unreferenced files and functions, then vacuums.
+fn clean(args: CleanArgs, settings: Option<&settings::Loaded>) -> Result<()> {
+    let db_path = database(&args.db, settings);
+    if !db_path.exists() {
+        bail!("{}: no such database", db_path.display());
+    }
+    let mut db = Database::open_unchecked(&db_path)?;
+    let before = database_size(&db_path);
+    let removed = if args.dry_run {
+        db.unreferenced()?
+    } else {
+        let removed = db.clean()?;
+        if !args.no_vacuum {
+            db.vacuum()?;
+        }
+        removed
+    };
+    let after = database_size(&db_path);
+    match args.format {
+        SummaryFormat::Text => {
+            let verb = if args.dry_run {
+                "would remove"
+            } else {
+                "removed"
+            };
+            println!(
+                "{verb} {} files and {} functions no longer referenced",
+                removed.files, removed.functions
+            );
+            if !args.dry_run {
+                let mb = |b: u64| b as f64 / 1024.0 / 1024.0;
+                println!("database: {:.1} MB -> {:.1} MB", mb(before), mb(after));
+            }
+        }
+        SummaryFormat::Json => {
+            let value = serde_json::json!({
+                "dry_run": args.dry_run,
+                "removed": removed,
+                "size_before": before,
+                "size_after": after,
+            });
+            println!("{}", serde_json::to_string_pretty(&value)?);
+        }
+    }
+    Ok(())
 }
 
 /// `pelicode index`: extracts the given paths and stores them as one package version.

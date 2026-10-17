@@ -147,6 +147,27 @@ most common fingerprints (N1):
 
 The counts are not updated when packages are added. Run `pelicode stats --refresh`, or pass `--refresh-stats` to `crawl` or `index`; `scan` warns when the counts are out of date.
 
+### `clean`
+
+Removes the files no package version refers to any more, with their functions and features, and shrinks the database file. Such files are left behind when a version is indexed again (`index` of the same name and version, or `crawl --force`).
+
+```
+pelicode clean [OPTIONS]
+```
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `--dry-run` | | Only report what would be removed |
+| `--no-vacuum` | | Do not shrink the file; shrinking (SQLite `VACUUM`) needs as much free disk space as the database takes |
+| `-f, --format <FORMAT>` | `text` | `text` or `json` |
+
+```
+removed 3 files and 41 functions no longer referenced
+database: 221.3 MB -> 213.5 MB
+```
+
+The hash statistics stay valid: they count only files that versions refer to.
+
 ### `scan`
 
 Searches the database for functions similar to those of the given code.

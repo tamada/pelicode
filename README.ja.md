@@ -108,6 +108,7 @@ hex.go:10-44 parseID (tokens=275)
 | `pelicode crawl <ECOSYSTEM> [PACKAGES]...` | 公開リポジトリからパッケージを取得して索引する |
 | `pelicode index <PATHS>...` | 手元のディレクトリを1つのパッケージとして索引する |
 | `pelicode stats` | DB の統計と、多くのパッケージに現れるハッシュを表示する |
+| `pelicode clean` | 参照されなくなったデータを削除し、DB を縮める |
 | `pelicode scan [PATHS]...` | 類似候補を検索する |
 | `pelicode extract <PATHS>...` | 関数の抽出結果と特徴量を表示する（DB は使わない） |
 | `pelicode export` | DB に入っている関数を一覧する |

@@ -237,6 +237,10 @@ winnowing の性質として、w + k − 1 トークン以上の共通部分を�
 
 ---
 
+### 5.5 掃除
+
+同じバージョンを再索引するとファイル一覧が置き換わり、どのバージョンからも参照されないファイルが残ることがある。`pelicode clean` は、それらを関数、完全ハッシュ、フィンガープリント、MinHash、LSH バケットとともに1つのトランザクションで削除し、SQLite の `VACUUM` で容量を回収する（前後で WAL を本体に書き戻す）。出現パッケージ数の集計は参照されているファイルだけを数えるので、集計し直す必要はない。
+
 ## 6. 収集（pelicode-crawl）
 
 ### 6.1 共通の処理手順
@@ -348,6 +352,7 @@ getter、`equals`、定型的な例外処理のように、多くのパッケー
 | `pelicode crawl <ECOSYSTEM> [PACKAGES]...` | 公開リポジトリから取得して索引する（§6） |
 | `pelicode index <PATHS>...` | 手元のディレクトリを1つのパッケージのバージョンとして索引する。エコシステムの既定は `local` |
 | `pelicode stats` | データベースの統計と、ありふれたハッシュの一覧を表示する。`--refresh` で集計し直す |
+| `pelicode clean` | どのバージョンからも参照されなくなったファイルと関数を削除し、ファイルを縮める（`--dry-run` で件数だけを示す） |
 | `pelicode scan [PATHS]...` | 候補を検索する（§7） |
 | `pelicode extract <PATHS>...` | データベースを使わずに、関数と特徴量を表示する |
 | `pelicode export` | データベースの関数を一覧する |
@@ -498,6 +503,7 @@ pelicode-core、pelicode-db、pelicode-detect、pelicode-crawl はライブラ�
 | YAML・JSON5 の設定ファイル | 実装済み |
 | SARIF 出力 | 実装済み |
 | PR を検査する GitHub Action | 実装済み |
+| データベースの掃除（`pelicode clean`） | 実装済み |
 | CI、リリース、コンテナ、ドキュメントサイト | 実装済み（実際のリリースは未実施） |
 
 ### 12.2 未実装の機能
@@ -507,7 +513,6 @@ pelicode-core、pelicode-db、pelicode-detect、pelicode-crawl はライブラ�
 | 集計のインクリメンタルな更新 | 前回の集計後に追加・置き換えされたバージョンのハッシュだけを数え直す |
 | 新しいバージョンの検知 | crates.io の RSS、PyPI の更新情報、index.golang.org などを使った `list_updates(since)` |
 | スナップショット | ソースコードを含まない配布用 DB の作成（`pelicode snapshot`）と配布 |
-| データベースの掃除 | 参照されなくなったファイル・関数の削除と容量の圧縮 |
 | 評価実験 | `pelicode eval` と評価データの生成（§11.1） |
 | git コマンドへの依存の解消 | gix（Rust 実装の git）による差分の取得 |
 
