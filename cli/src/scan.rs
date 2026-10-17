@@ -1,40 +1,50 @@
 //! `pelicode scan`: reports stored functions similar to the checked ones.
 
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 use clap::Args;
+use globset::GlobSet;
 use pelicode_core::{Config, Language, extract_bytes};
 use pelicode_db::Database;
 use pelicode_detect::{Candidate, Detector, MatchKind, Options, Report};
 use serde::Serialize;
 
 use crate::git::Changes;
+use crate::settings::{self, Loaded};
 use crate::{Format, extract_paths, open_output};
 
 #[derive(Args)]
 pub struct ScanArgs {
     /// Files or directories to check; with --git, the repository (default: .).
     paths: Vec<PathBuf>,
-    /// Database file.
-    #[arg(long, default_value = "pelicode.db")]
-    db: PathBuf,
+    /// Database file [default: `database` of the settings file, else pelicode.db].
+    #[arg(long)]
+    db: Option<PathBuf>,
     /// Check only the functions changed in a git range (BASE, BASE..HEAD or BASE...HEAD).
     #[arg(long, value_name = "RANGE")]
     git: Option<String>,
-    /// Minimum similarity (Jaccard of fingerprint sets) to report.
-    #[arg(long, default_value_t = Options::default().threshold)]
-    threshold: f64,
-    /// Candidates reported per function.
-    #[arg(long, default_value_t = Options::default().max_candidates)]
-    max_candidates: usize,
-    /// Functions with fewer tokens are not checked.
-    #[arg(long, default_value_t = Options::default().min_tokens)]
-    min_tokens: usize,
-    /// Never report functions of this package (ECOSYSTEM:NAME); repeatable.
+    /// Minimum similarity (Jaccard of fingerprint sets) to report [default: 0.7].
+    #[arg(long)]
+    threshold: Option<f64>,
+    /// Candidates reported per function [default: 5].
+    #[arg(long)]
+    max_candidates: Option<usize>,
+    /// Functions with fewer tokens are not checked [default: 50].
+    #[arg(long)]
+    min_tokens: Option<usize>,
+    /// Check only these languages (comma-separated) [default: every supported language].
+    #[arg(long, value_delimiter = ',')]
+    languages: Vec<Language>,
+    /// Never report functions of this package (ECOSYSTEM:NAME); repeatable, added to the
+    /// settings file's.
     #[arg(long, value_name = "ECOSYSTEM:NAME")]
     exclude: Vec<String>,
+    /// Do not check files whose path matches this glob (`*` within a directory, `**` across);
+    /// repeatable, added to the settings file's.
+    #[arg(long, value_name = "GLOB")]
+    exclude_path: Vec<String>,
     /// Output format.
     #[arg(short, long, value_enum, default_value_t = Format::Text)]
     format: Format,
@@ -44,15 +54,95 @@ pub struct ScanArgs {
     /// Exit with status 1 when any candidate is found.
     #[arg(long)]
     fail_on_match: bool,
-    /// Ignore hashes found in at least N packages, or in P% of the packages (0 disables).
-    #[arg(long, value_name = "N|P%", default_value = "100")]
-    stop_packages: StopThreshold,
-    /// Minimum number of shared fingerprints (common ones excluded) for a similar match.
-    #[arg(long, value_name = "N", default_value_t = Options::default().min_shared)]
-    min_shared: usize,
+    /// Ignore hashes found in at least N packages, or in P% of the packages (0 disables)
+    /// [default: 100].
+    #[arg(long, value_name = "N|P%")]
+    stop_packages: Option<StopThreshold>,
+    /// Minimum number of shared fingerprints (common ones excluded) for a similar match
+    /// [default: 5].
+    #[arg(long, value_name = "N")]
+    min_shared: Option<usize>,
     /// Weight fingerprints by inverse document frequency.
     #[arg(long)]
     idf: bool,
+}
+
+/// The options of a scan: the command line, else the settings file, else the defaults.
+struct Resolved {
+    options: Options,
+    stop_packages: StopThreshold,
+    fail_on_match: bool,
+    languages: Option<Vec<Language>>,
+    exclude_paths: GlobSet,
+}
+
+impl Resolved {
+    fn new(args: &ScanArgs, loaded: Option<&Loaded>) -> Result<Resolved> {
+        let defaults = Options::default();
+        let file = loaded.map(|l| &l.settings.scan);
+        let from_file = |get: fn(&settings::ScanSettings) -> Option<usize>| file.and_then(get);
+
+        let mut packages = file.map(|f| f.exclude.packages.clone()).unwrap_or_default();
+        packages.extend(args.exclude.iter().cloned());
+        let mut paths = file.map(|f| f.exclude.paths.clone()).unwrap_or_default();
+        paths.extend(args.exclude_path.iter().cloned());
+
+        let threshold = args
+            .threshold
+            .or_else(|| file.and_then(|f| f.threshold))
+            .unwrap_or(defaults.threshold);
+        if !(0.0..=1.0).contains(&threshold) {
+            bail!("--threshold must be between 0 and 1, got {threshold}");
+        }
+        let stop_packages = match args.stop_packages {
+            Some(stop) => stop,
+            None => match loaded {
+                Some(l) => l.stop_packages()?,
+                None => None,
+            }
+            .unwrap_or(StopThreshold::Count(defaults.stop_packages)),
+        };
+        Ok(Resolved {
+            options: Options {
+                min_tokens: args
+                    .min_tokens
+                    .or_else(|| from_file(|f| f.min_tokens))
+                    .unwrap_or(defaults.min_tokens),
+                threshold,
+                max_candidates: args
+                    .max_candidates
+                    .or_else(|| from_file(|f| f.max_candidates))
+                    .unwrap_or(defaults.max_candidates),
+                min_shared: args
+                    .min_shared
+                    .or_else(|| from_file(|f| f.min_shared))
+                    .unwrap_or(defaults.min_shared),
+                idf: args.idf || file.and_then(|f| f.idf).unwrap_or(false),
+                exclude_packages: packages
+                    .iter()
+                    .map(|p| settings::parse_package(p).context("--exclude"))
+                    .collect::<Result<_>>()?,
+                ..defaults
+            },
+            stop_packages,
+            fail_on_match: args.fail_on_match
+                || file.and_then(|f| f.fail_on_match).unwrap_or(false),
+            languages: if args.languages.is_empty() {
+                file.and_then(|f| f.languages.clone())
+            } else {
+                Some(args.languages.clone())
+            },
+            exclude_paths: settings::glob_set(&paths).context("--exclude-path")?,
+        })
+    }
+
+    /// Whether a file is checked: its language is selected and its path not excluded.
+    fn accepts(&self, path: &Path, language: Language) -> bool {
+        self.languages
+            .as_ref()
+            .is_none_or(|languages| languages.contains(&language))
+            && !self.exclude_paths.is_match(path)
+    }
 }
 
 /// A number of packages, absolute or relative to the database.
@@ -98,34 +188,23 @@ impl std::str::FromStr for StopThreshold {
 }
 
 /// Runs the scan; returns whether any candidate was found.
-pub fn run(args: ScanArgs) -> Result<bool> {
-    if !args.db.exists() {
-        bail!("{}: no such database", args.db.display());
+pub fn run(args: ScanArgs, settings: Option<&Loaded>) -> Result<bool> {
+    let db_path = crate::database(&args.db, settings);
+    if !db_path.exists() {
+        bail!("{}: no such database", db_path.display());
     }
-    let db = Database::open_unchecked(&args.db)?;
+    let db = Database::open_unchecked(&db_path)?;
     // Featurize the checked code exactly like the stored code.
     let config = db.config_from_meta(&Config {
         min_tokens: 0,
         ..Config::default()
     })?;
+    let resolved = Resolved::new(&args, settings)?;
     let options = Options {
-        min_tokens: args.min_tokens,
-        threshold: args.threshold,
-        max_candidates: args.max_candidates,
-        exclude_packages: args
-            .exclude
-            .iter()
-            .map(|p| match p.split_once(':') {
-                Some((eco, name)) => Ok((eco.to_string(), name.to_string())),
-                None => bail!("--exclude expects ECOSYSTEM:NAME, got {p}"),
-            })
-            .collect::<Result<_>>()?,
-        stop_packages: args.stop_packages.resolve(db.package_count()?),
-        min_shared: args.min_shared,
-        idf: args.idf,
-        ..Options::default()
+        stop_packages: resolved.stop_packages.resolve(db.package_count()?),
+        ..resolved.options.clone()
     };
-    if options.stop_packages > 0 || args.idf {
+    if options.stop_packages > 0 || options.idf {
         let info = db.hash_stats_info()?;
         if info.updated_at.is_none() {
             eprintln!(
@@ -151,6 +230,9 @@ pub fn run(args: ScanArgs) -> Result<bool> {
                 let Some(language) = Language::from_path(path) else {
                     continue;
                 };
+                if !resolved.accepts(path, language) {
+                    continue;
+                }
                 let content = changes.content(path)?;
                 files.push(
                     extract_bytes(path, language, &content, &config)
@@ -165,7 +247,8 @@ pub fn run(args: ScanArgs) -> Result<bool> {
             if args.paths.is_empty() {
                 bail!("give files or directories to check, or --git RANGE");
             }
-            let files = extract_paths(&args.paths, &config)?;
+            let mut files = extract_paths(&args.paths, &config)?;
+            files.retain(|f| resolved.accepts(&f.path, f.language));
             detector.detect(&files, |_, _| true)?
         }
     };
@@ -177,7 +260,7 @@ pub fn run(args: ScanArgs) -> Result<bool> {
         Format::Csv => csv(&mut out, &reports)?,
     }
     out.flush()?;
-    Ok(args.fail_on_match && !reports.is_empty())
+    Ok(resolved.fail_on_match && !reports.is_empty())
 }
 
 /// `exact(N1)`, `similar(N1)` and so on.

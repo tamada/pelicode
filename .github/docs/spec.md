@@ -291,7 +291,7 @@ Packages are given by name (`NAME[@VERSION]` and the like), in a list file (`--l
 - **Files and directories**: every file of a supported language in them, except hidden files and, in Git repositories, files ignored by `.gitignore`.
 - **A git range** (`--git`): with `BASE..HEAD` or `BASE...HEAD` the content of HEAD, with `BASE` alone the working tree, and only the functions overlapping lines added or changed in `git diff --unified=0`. A pure deletion marks the line where it happened.
 
-Functions with fewer than `--min-tokens` tokens (50 by default) are not checked.
+Files can be narrowed down by language (`--languages`) and by glob patterns over their reported paths (`--exclude-path`, where `*` stays within a directory and `**` crosses directories). Functions with fewer than `--min-tokens` tokens (50 by default) are not checked.
 
 ### 7.2 Candidate Search
 
@@ -355,7 +355,32 @@ Reports speak of "similar code candidates to review", never of plagiarism or inf
 
 All options and examples are in [Usage](https://tamada.github.io/pelicode/usage/) on the documentation site.
 
-### 8.2 Output Formats
+### 8.2 Settings File
+
+Options used every time can be written in a settings file, in YAML or JSON5.
+
+- **Names**: `.pelicode.yaml`, `.pelicode.yml`, `.pelicode.json5` and `.pelicode.json` (read as JSON5).
+- **Discovery**: the current directory, then each directory above it, up to the root of the git repository (the directory holding `.git`). Several files in one directory are an error. `--config <FILE>` names a file, and `--no-config` disables settings files; both are accepted by every command.
+- **Precedence**: command line, then settings file, then built-in defaults. Lists (`--exclude`, `--exclude-path`) are merged with those of the file. Flags (`--idf`, `--fail-on-match`) can only switch a setting on.
+- **Keys**: `version` (must be 1), `database` (relative to the settings file), `scan.languages`, `scan.threshold`, `scan.min_tokens`, `scan.max_candidates`, `scan.min_shared`, `scan.stop_packages` (a number, or a percentage such as `"10%"`), `scan.idf`, `scan.fail_on_match`, `scan.exclude.packages`, `scan.exclude.paths`, `crawl.contact` and `crawl.delay_ms`. Each corresponds to the option of the same name.
+- **Validation**: unknown keys, an unsupported version, a threshold outside 0 to 1, invalid stop thresholds, package names and glob patterns are errors, reported with the file (and, for YAML, the line).
+- **Implementation**: YAML is read with serde-saphyr and JSON5 with json5, into the same serde types.
+
+```yaml
+version: 1
+database: data/pelicode.db
+scan:
+  languages: [python, rust]
+  threshold: 0.6
+  stop_packages: 10%
+  exclude:
+    packages: ["local:my-project"]
+    paths: ["vendor/**"]
+crawl:
+  contact: https://example.org/about
+```
+
+### 8.3 Output Formats
 
 | Command | text | JSON | CSV |
 | --- | --- | --- | --- |
@@ -366,14 +391,14 @@ All options and examples are in [Usage](https://tamada.github.io/pelicode/usage/
 
 Paths are recorded and printed with `/` on every platform.
 
-### 8.3 Exit Status
+### 8.4 Exit Status
 
 | Status | Meaning |
 | --- | --- |
 | 0 | Success |
 | 1 | An error; `crawl` failed for a package; or `scan --fail-on-match` found a candidate |
 
-### 8.4 Libraries
+### 8.5 Libraries
 
 pelicode-core, pelicode-db, pelicode-detect and pelicode-crawl can be used as libraries. Every public item is documented, and every public function has an example (doctest).
 
@@ -456,6 +481,7 @@ A command that runs evaluation experiments (`pelicode eval`) is not implemented 
 | Collection from five public repositories, with verification | Done |
 | Package counts, exclusion of common hashes, IDF | Done (counts rebuilt as a whole) |
 | Checking directories and git ranges; text, JSON and CSV | Done |
+| Settings files in YAML and JSON5 | Done |
 | CI, release, container, documentation site | Done (no release made yet) |
 
 ### 12.2 Not Implemented Yet
@@ -468,7 +494,6 @@ A command that runs evaluation experiments (`pelicode eval`) is not implemented 
 | Database cleanup | Removing files and functions no longer referenced, and compacting the database |
 | Pull request bot | A GitHub Action showing candidates as check run annotations and a pull request comment; by default it does not block merging (`neutral`) |
 | SARIF output | Integration with GitHub code scanning |
-| Configuration file | `.pelicode.yml` at the repository root (languages, thresholds, excluded paths and packages, where the database comes from) |
 | Evaluation | `pelicode eval` and the generation of evaluation data (§11.1) |
 | No dependency on the git command | Reading diffs with gix, the Rust implementation of git |
 

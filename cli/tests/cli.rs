@@ -3,9 +3,12 @@ use std::process::Command;
 
 const FIXTURE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/project");
 
+/// Runs pelicode without settings files, so that a settings file in the
+/// repository does not change the results.
 fn pelicode(args: &[&str]) -> String {
     let output = Command::new(env!("CARGO_BIN_EXE_pelicode"))
         .args(args)
+        .arg("--no-config")
         .output()
         .unwrap();
     assert!(
@@ -185,4 +188,88 @@ fn stats_after_refresh() {
     .unwrap();
     assert_eq!(stats["hash_stats"]["packages"], 2);
     assert_eq!(stats["common_exact_hashes"][0]["package_count"], 2);
+}
+
+/// Runs pelicode in `dir`, where it looks for settings files.
+fn pelicode_in(dir: &Path, args: &[&str]) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_pelicode"))
+        .args(args)
+        .current_dir(dir)
+        .output()
+        .unwrap()
+}
+
+fn reported_files(output: &std::process::Output) -> Vec<String> {
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let reports: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let mut files: Vec<String> = reports
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["path"].as_str().unwrap().to_string())
+        .collect();
+    files.dedup();
+    files
+}
+
+#[test]
+fn settings_files_configure_scan() {
+    let dir = tempfile::tempdir().unwrap();
+    let work = dir.path().join("work");
+    std::fs::create_dir_all(work.join("data")).unwrap();
+    std::fs::create_dir(work.join(".git")).unwrap();
+    let db = work.join("data/ref.db").to_string_lossy().into_owned();
+    pelicode(&["index", FIXTURE, "--db", &db, "--min-tokens", "10"]);
+
+    // The database comes from the settings file, relative to it.
+    std::fs::write(
+        work.join(".pelicode.yaml"),
+        "version: 1\ndatabase: data/ref.db\nscan:\n  min_tokens: 10\n  languages: [python, go]\n",
+    )
+    .unwrap();
+    let scan = |extra: &[&str]| {
+        let mut args = vec!["scan", FIXTURE, "-f", "json"];
+        args.extend_from_slice(extra);
+        reported_files(&pelicode_in(&work, &args))
+    };
+    assert_eq!(scan(&[]), ["lib/stack.py", "src/stack.go"]);
+    // The command line wins over the settings file.
+    assert_eq!(scan(&["--languages", "ruby"]), ["app/stack.rb"]);
+
+    // JSON5, found from a subdirectory; paths excluded by glob.
+    std::fs::remove_file(work.join(".pelicode.yaml")).unwrap();
+    std::fs::write(
+        work.join(".pelicode.json5"),
+        "{ version: 1, database: 'data/ref.db', scan: { min_tokens: 10, exclude: { paths: ['src/**'] } } }",
+    )
+    .unwrap();
+    std::fs::create_dir(work.join("sub")).unwrap();
+    let files = reported_files(&pelicode_in(
+        &work.join("sub"),
+        &["scan", FIXTURE, "-f", "json"],
+    ));
+    assert_eq!(files, ["app/stack.rb", "lib/stack.py"]);
+
+    // --no-config ignores it, so the default database is missing.
+    let output = pelicode_in(&work, &["scan", FIXTURE, "--no-config"]);
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("pelicode.db: no such database"));
+
+    // Mistakes are reported with the file.
+    std::fs::write(
+        work.join(".pelicode.json5"),
+        "{ version: 1, scan: { treshold: 0.5 } }",
+    )
+    .unwrap();
+    let output = pelicode_in(&work, &["scan", FIXTURE]);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success());
+    assert!(
+        stderr.contains(".pelicode.json5") && stderr.contains("treshold"),
+        "{stderr}"
+    );
 }

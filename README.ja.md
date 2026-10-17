@@ -176,6 +176,30 @@ pelicode scan ./src --fail-on-match              # 候補があれば終了コ�
 
 `--stop-packages` の既定値 100 は、大規模な DB を前提にしています。パッケージが数十件しかない DB では効かないので、`--stop-packages 40%` のように割合で指定してください。
 
+`--languages python,rust` で検査する言語を絞り、`--exclude-path 'vendor/**'` でパスを指定してファイルを除外できます。
+
+### 設定ファイル
+
+毎回使うオプションは、リポジトリのルートの `.pelicode.yaml`（または `.pelicode.yml`、`.pelicode.json5`、`.pelicode.json`）に書いておけます。JSON5 でも書けます。
+
+```yaml
+# .pelicode.yaml
+version: 1
+database: data/pelicode.db        # この設定ファイルからの相対パス
+scan:
+  languages: [python, rust]
+  threshold: 0.6
+  stop_packages: 10%
+  fail_on_match: true
+  exclude:
+    packages: ["local:my-project"]
+    paths: ["vendor/**", "**/testdata/**"]
+crawl:
+  contact: https://example.org/about
+```
+
+pelicode はカレントディレクトリから上に向かって、git リポジトリのルートまで設定ファイルを探します。コマンドラインで指定したオプションは、設定ファイルより優先されます。`--config FILE` で別のファイルを指定でき、`--no-config` で設定ファイルを無視できます。書ける項目の一覧は [Usage](https://tamada.github.io/pelicode/usage/#-settings-file)（英語）を見てください。
+
 ### extract / export: 中身の確認
 
 ```bash
@@ -221,7 +245,6 @@ just --list      # CI が実行するタスクの一覧（https://just.systems/ 
 - GitHub の PR を検査するボット（GitHub Actions / GitHub App）と SARIF 出力
 - 新しく公開されたバージョンの自動検知（現状は、パッケージ名・一覧ファイル・上位 N 件で指定します）
 - 配布用の DB スナップショット（`pelicode snapshot`）と、評価実験用のコマンド（`pelicode eval`）
-- 設定ファイル（`.pelicode.yml`）
 - Go・Maven・RubyGems のダウンロード数上位の取得
 
 ## ライセンス

@@ -8,12 +8,13 @@ use pelicode_core::Level;
 use pelicode_db::{CommonHash, Database};
 
 use crate::SummaryFormat;
+use crate::settings::Loaded;
 
 #[derive(Args)]
 pub struct StatsArgs {
-    /// Database file.
-    #[arg(long, default_value = "pelicode.db")]
-    db: PathBuf,
+    /// Database file [default: `database` of the settings file, else pelicode.db].
+    #[arg(long)]
+    db: Option<PathBuf>,
     /// Rebuild the per-hash package counts first.
     #[arg(long)]
     refresh: bool,
@@ -32,11 +33,12 @@ pub struct StatsArgs {
 }
 
 /// Runs `pelicode stats`, refreshing the hash statistics first with `--refresh`.
-pub fn run(args: StatsArgs) -> Result<()> {
-    if !args.db.exists() {
-        bail!("{}: no such database", args.db.display());
+pub fn run(args: StatsArgs, settings: Option<&Loaded>) -> Result<()> {
+    let db_path = crate::database(&args.db, settings);
+    if !db_path.exists() {
+        bail!("{}: no such database", db_path.display());
     }
-    let mut db = Database::open_unchecked(&args.db)?;
+    let mut db = Database::open_unchecked(&db_path)?;
     if args.refresh {
         db.refresh_hash_stats()?;
     }

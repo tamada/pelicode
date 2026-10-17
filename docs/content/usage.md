@@ -5,7 +5,7 @@ date: 2026-10-17
 draft: false
 ---
 
-[ [📋 Synopsis](#-synopsis) | [🧰 Commands](#-commands) | [🎛️ Feature Parameters](#-feature-parameters) | [📤 Output Formats](#-output-formats) | [🚦 Exit Status](#-exit-status) | [🔧 Tuning the Search](#-tuning-the-search) ]
+[ [📋 Synopsis](#-synopsis) | [🧰 Commands](#-commands) | [📝 Settings File](#-settings-file) | [🎛️ Feature Parameters](#-feature-parameters) | [📤 Output Formats](#-output-formats) | [🚦 Exit Status](#-exit-status) | [🔧 Tuning the Search](#-tuning-the-search) ]
 
 ---
 
@@ -32,7 +32,7 @@ pelicode stats --refresh             # count common hashes
 pelicode scan ./src                  # check code
 ```
 
-Every command that uses a database takes `--db <FILE>`; the default is `pelicode.db` in the current directory. `pelicode <COMMAND> --help` lists all options of a command.
+Every command that uses a database takes `--db <FILE>`; the default is the `database` of the [settings file](#-settings-file), else `pelicode.db` in the current directory. `pelicode <COMMAND> --help` lists all options of a command.
 
 ---
 
@@ -161,7 +161,9 @@ pelicode scan [OPTIONS] [PATHS]...
 | `--threshold <X>` | 0.7 | Minimum [similarity](/glossary#similarity) to report |
 | `--min-tokens <N>` | 50 | Functions with fewer tokens are not checked |
 | `--max-candidates <N>` | 5 | Candidates reported per function |
+| `--languages <LANGS>` | all | Check only these languages, comma-separated |
 | `--exclude <ECOSYSTEM:NAME>` | | Never report this package; repeatable |
+| `--exclude-path <GLOB>` | | Do not check files whose path matches; `*` stays within a directory, `**` crosses directories; repeatable |
 | `--stop-packages <N or P%>` | 100 | Ignore hashes found in at least N packages, or in P% of them; 0 disables |
 | `--min-shared <N>` | 5 | Shared fingerprints required for a similar match |
 | `--idf` | | Weight fingerprints by inverse document frequency |
@@ -236,6 +238,69 @@ python   py
 ruby     rb
 rust     rs
 ```
+
+---
+
+## 📝 Settings File
+
+Options used every time, such as the database, the thresholds and what to leave out, can be written in a settings file at the root of the repository, in YAML or JSON5:
+
+```yaml
+# .pelicode.yaml
+version: 1
+database: data/pelicode.db        # relative to this file
+scan:
+  languages: [python, rust]
+  threshold: 0.6
+  stop_packages: 10%
+  fail_on_match: true
+  exclude:
+    packages: ["local:my-project"]
+    paths: ["vendor/**", "**/testdata/**"]
+crawl:
+  contact: https://example.org/about
+```
+
+```json5
+// .pelicode.json5
+{
+  version: 1,
+  database: 'data/pelicode.db',
+  scan: {
+    languages: ['python', 'rust'],
+    threshold: 0.6,
+    stop_packages: '10%',
+    fail_on_match: true,
+    exclude: { packages: ['local:my-project'], paths: ['vendor/**', '**/testdata/**'] },
+  },
+  crawl: { contact: 'https://example.org/about' },
+}
+```
+
+**Where it is found**: `.pelicode.yaml`, `.pelicode.yml`, `.pelicode.json5` or `.pelicode.json` (read as JSON5), in the current directory or the nearest directory above it, up to the root of the git repository. Several in the same directory are an error. `--config <FILE>` names one explicitly, and `--no-config` ignores settings files; both work with every command.
+
+**Precedence**: an option on the command line wins over the settings file, which wins over the built-in default. `--exclude` and `--exclude-path` are added to the lists of the settings file. Flags such as `--idf` and `--fail-on-match` can only switch a setting on; to switch off one set in the file, use `--no-config` or edit the file.
+
+| Key | Option | Description |
+| --- | --- | --- |
+| `version` | | Version of the format; must be `1` (required) |
+| `database` | `--db` | Database file, relative to the settings file |
+| `scan.languages` | `--languages` | Languages to check |
+| `scan.threshold` | `--threshold` | Minimum similarity, from 0 to 1 |
+| `scan.min_tokens` | `--min-tokens` | Smallest function checked |
+| `scan.max_candidates` | `--max-candidates` | Candidates per function |
+| `scan.min_shared` | `--min-shared` | Shared fingerprints required |
+| `scan.stop_packages` | `--stop-packages` | A number, or a percentage such as `"10%"` |
+| `scan.idf` | `--idf` | `true` or `false` |
+| `scan.fail_on_match` | `--fail-on-match` | `true` or `false` |
+| `scan.exclude.packages` | `--exclude` | Packages never reported, as `ECOSYSTEM:NAME` |
+| `scan.exclude.paths` | `--exclude-path` | Glob patterns of files not checked |
+| `crawl.contact` | `--contact` | Contact added to the User-Agent |
+| `crawl.delay_ms` | `--delay-ms` | Minimum interval between requests |
+
+Unknown keys are errors, so that a misspelled key does not go unnoticed; the message names the file and, for YAML, the line.
+
+The paths matched by `exclude.paths` are the paths `scan` reports: relative to the directory given, or to the repository with `--git`.
 
 ---
 

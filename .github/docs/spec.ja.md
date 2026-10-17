@@ -291,7 +291,7 @@ winnowing の性質として、w + k − 1 トークン以上の共通部分を�
 - **ファイル・ディレクトリ**: その中の対応言語のファイルをすべて検査する。隠しファイルと、git リポジトリ内で `.gitignore` に指定されたファイルは除く。
 - **git の範囲**（`--git`）: `BASE..HEAD` または `BASE...HEAD` なら HEAD 側の内容を、`BASE` だけなら作業ツリーの内容を使い、`git diff --unified=0` で追加・変更された行に重なる関数だけを検査する。削除だけの変更は、削除された位置の行に重なる関数を対象にする。
 
-トークン数が `--min-tokens`（既定 50）未満の関数は検査しない。
+検査するファイルは、言語（`--languages`）と、報告されるパスに対するグロブパターン（`--exclude-path`。`*` はディレクトリの中だけ、`**` はディレクトリをまたいで一致）で絞り込める。トークン数が `--min-tokens`（既定 50）未満の関数は検査しない。
 
 ### 7.2 候補の探索
 
@@ -355,7 +355,32 @@ getter、`equals`、定型的な例外処理のように、多くのパッケー
 
 すべてのオプションと例は、ドキュメントサイトの [Usage](https://tamada.github.io/pelicode/usage/) に示す。
 
-### 8.2 出力形式
+### 8.2 設定ファイル
+
+毎回使うオプションは、YAML または JSON5 の設定ファイルに書いておける。
+
+- **ファイル名**: `.pelicode.yaml`、`.pelicode.yml`、`.pelicode.json5`、`.pelicode.json`（JSON5 として読む）。
+- **探し方**: カレントディレクトリから順に上のディレクトリへ、git リポジトリのルート（`.git` のあるディレクトリ）まで探す。同じディレクトリに複数あればエラーにする。`--config <FILE>` でファイルを指定でき、`--no-config` で設定ファイルを使わない。どちらも全コマンドで使える。
+- **優先順位**: コマンドライン、設定ファイル、既定値の順。リストのオプション（`--exclude`、`--exclude-path`）は設定ファイルのリストに追加する。フラグ（`--idf`、`--fail-on-match`）は有効にすることしかできない。
+- **項目**: `version`（1 でなければならない）、`database`（設定ファイルからの相対パス）、`scan.languages`、`scan.threshold`、`scan.min_tokens`、`scan.max_candidates`、`scan.min_shared`、`scan.stop_packages`（数、または `"10%"` のような割合）、`scan.idf`、`scan.fail_on_match`、`scan.exclude.packages`、`scan.exclude.paths`、`crawl.contact`、`crawl.delay_ms`。それぞれ同じ名前のオプションに対応する。
+- **検査**: 未知の項目、対応していない版、0〜1 の範囲外の閾値、不正な除外の閾値・パッケージ名・グロブパターンはエラーにし、ファイル名（YAML なら行も）を示す。
+- **実装**: YAML は serde-saphyr、JSON5 は json5 で、同じ serde の型に読み込む。
+
+```yaml
+version: 1
+database: data/pelicode.db
+scan:
+  languages: [python, rust]
+  threshold: 0.6
+  stop_packages: 10%
+  exclude:
+    packages: ["local:my-project"]
+    paths: ["vendor/**"]
+crawl:
+  contact: https://example.org/about
+```
+
+### 8.3 出力形式
 
 | コマンド | text | JSON | CSV |
 | --- | --- | --- | --- |
@@ -366,14 +391,14 @@ getter、`equals`、定型的な例外処理のように、多くのパッケー
 
 パスはどの OS でも `/` 区切りで記録・出力する。
 
-### 8.3 終了コード
+### 8.4 終了コード
 
 | 終了コード | 意味 |
 | --- | --- |
 | 0 | 成功 |
 | 1 | エラー、`crawl` で失敗したパッケージがある、または `scan --fail-on-match` で候補が見つかった |
 
-### 8.4 ライブラリ
+### 8.5 ライブラリ
 
 pelicode-core、pelicode-db、pelicode-detect、pelicode-crawl はライブラリとしても使える。すべての公開 API に説明と使用例（doctest）を付ける。
 
@@ -456,6 +481,7 @@ pelicode-core、pelicode-db、pelicode-detect、pelicode-crawl はライブラ�
 | 5つの公開リポジトリからの取得と改ざん検査 | 実装済み |
 | 出現パッケージ数の集計と、ありふれたハッシュの除外・IDF | 実装済み（集計は全体の作り直し） |
 | ディレクトリ・git の範囲の検査、text / JSON / CSV 出力 | 実装済み |
+| YAML・JSON5 の設定ファイル | 実装済み |
 | CI、リリース、コンテナ、ドキュメントサイト | 実装済み（実際のリリースは未実施） |
 
 ### 12.2 未実装の機能
@@ -468,7 +494,6 @@ pelicode-core、pelicode-db、pelicode-detect、pelicode-crawl はライブラ�
 | データベースの掃除 | 参照されなくなったファイル・関数の削除と容量の圧縮 |
 | PR 検査ボット | GitHub Action として提供し、Check Run の注釈と PR へのコメントで候補を示す。既定ではマージを妨げない（`neutral`） |
 | SARIF 出力 | GitHub Code Scanning への連携 |
-| 設定ファイル | リポジトリ直下の `.pelicode.yml`（対象言語、閾値、除外するパスとパッケージ、DB の取得元） |
 | 評価実験 | `pelicode eval` と評価データの生成（§11.1） |
 | git コマンドへの依存の解消 | gix（Rust 実装の git）による差分の取得 |
 

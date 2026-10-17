@@ -176,6 +176,30 @@ Main options:
 
 The default `--stop-packages 100` assumes a large database. With only a few dozen packages it has no effect, so give a percentage such as `--stop-packages 40%`.
 
+`--languages python,rust` checks only some languages, and `--exclude-path 'vendor/**'` leaves out files by path.
+
+### Settings file
+
+Options used every time can be written in `.pelicode.yaml` (or `.pelicode.yml`, `.pelicode.json5`, `.pelicode.json`) at the root of the repository:
+
+```yaml
+# .pelicode.yaml
+version: 1
+database: data/pelicode.db        # relative to this file
+scan:
+  languages: [python, rust]
+  threshold: 0.6
+  stop_packages: 10%
+  fail_on_match: true
+  exclude:
+    packages: ["local:my-project"]
+    paths: ["vendor/**", "**/testdata/**"]
+crawl:
+  contact: https://example.org/about
+```
+
+pelicode looks for it in the current directory and above, up to the root of the git repository. Options on the command line win over it; `--config FILE` names another file and `--no-config` ignores it. See [Usage](https://tamada.github.io/pelicode/usage/#-settings-file) for every key.
+
 ### extract / export: looking inside
 
 ```bash
@@ -221,7 +245,6 @@ just --list      # the tasks CI runs (with https://just.systems/)
 - A bot that checks GitHub pull requests (GitHub Actions / GitHub App) and SARIF output
 - Automatic detection of newly published versions (packages are currently given by name, by a list file or as the top N)
 - Distributable database snapshots (`pelicode snapshot`) and a command for evaluation experiments (`pelicode eval`)
-- A configuration file (`.pelicode.yml`)
 - Fetching the most downloaded packages of Go, Maven Central and RubyGems
 
 ## License

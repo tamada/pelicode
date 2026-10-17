@@ -17,7 +17,7 @@ pelicode scan --git origin/main...HEAD --db pelicode.db --fail-on-match
 - **Who**: maintainers who receive pull requests from outside contributors, or whose contributors write code with AI assistants.
 - **What it finds**: functions in the pull request that are identical or similar to functions of published packages, with the package, version, file, lines and license of each.
 - **What happens next**: a reviewer compares the two, and asks for attribution, a rewrite, or nothing.
-- **Works today**: the command above; with `--fail-on-match`, the job fails when there is something to review.
+- **Works today**: the command above; with `--fail-on-match`, the job fails when there is something to review. The database, the thresholds and what to leave out can be kept in a `.pelicode.yaml` committed to the repository.
 - **Missing**: a GitHub Action that wraps it, SARIF output to show the candidates in the pull request, and a way for CI to obtain a database (see [Where the database comes from](#where-the-database-comes-from)).
 
 ## 2. Checking code before committing

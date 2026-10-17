@@ -9,6 +9,7 @@ use pelicode_crawl::{Client, Crawler, Ecosystem, Outcome, crates, pypi};
 use pelicode_db::Database;
 
 use crate::FeatureArgs;
+use crate::settings::Loaded;
 
 #[derive(Args)]
 pub struct CrawlArgs {
@@ -23,19 +24,21 @@ pub struct CrawlArgs {
     /// Also crawl the N most downloaded packages (pypi and crates only).
     #[arg(long, value_name = "N")]
     top: Option<usize>,
-    /// Database file.
-    #[arg(long, default_value = "pelicode.db")]
-    db: PathBuf,
+    /// Database file [default: `database` of the settings file, else pelicode.db].
+    #[arg(long)]
+    db: Option<PathBuf>,
     /// Re-index versions that are already in the database.
     #[arg(long)]
     force: bool,
     /// Rebuild the per-hash package counts afterwards (see `pelicode stats`).
     #[arg(long)]
     refresh_stats: bool,
-    /// Minimum interval between requests, in milliseconds.
-    #[arg(long, default_value_t = 1000)]
-    delay_ms: u64,
-    /// Contact URL or e-mail address added to the User-Agent.
+    /// Minimum interval between requests, in milliseconds [default: `crawl.delay_ms` of the
+    /// settings file, else 1000].
+    #[arg(long)]
+    delay_ms: Option<u64>,
+    /// Contact URL or e-mail address added to the User-Agent [default: `crawl.contact` of the
+    /// settings file].
     #[arg(long)]
     contact: Option<String>,
     #[command(flatten)]
@@ -43,12 +46,18 @@ pub struct CrawlArgs {
 }
 
 /// Returns whether every package was indexed or skipped.
-pub fn run(args: CrawlArgs) -> Result<bool> {
+pub fn run(args: CrawlArgs, settings: Option<&Loaded>) -> Result<bool> {
     let config = args.features.config(false)?;
-    let client = Client::new(
-        args.contact.as_deref(),
-        Duration::from_millis(args.delay_ms),
-    );
+    let crawl = settings.map(|s| &s.settings.crawl);
+    let contact = args
+        .contact
+        .clone()
+        .or_else(|| crawl.and_then(|c| c.contact.clone()));
+    let delay_ms = args
+        .delay_ms
+        .or_else(|| crawl.and_then(|c| c.delay_ms))
+        .unwrap_or(1000);
+    let client = Client::new(contact.as_deref(), Duration::from_millis(delay_ms));
 
     let mut packages = args.packages.clone();
     if let Some(list) = &args.list {
@@ -68,7 +77,7 @@ pub fn run(args: CrawlArgs) -> Result<bool> {
             _ => bail!("--top is available for pypi and crates only"),
         }
     }
-    if args.ecosystem == Ecosystem::Crates && args.contact.is_none() {
+    if args.ecosystem == Ecosystem::Crates && contact.is_none() {
         eprintln!(
             "warning: the crates.io data access policy strongly suggests a way to contact \
              the crawler's operator; please set --contact"
@@ -81,8 +90,9 @@ pub fn run(args: CrawlArgs) -> Result<bool> {
         bail!("give packages, --list FILE or --top N");
     }
 
-    let mut db = Database::open(&args.db, &config)
-        .with_context(|| format!("cannot open {}", args.db.display()))?;
+    let db_path = crate::database(&args.db, settings);
+    let mut db = Database::open(&db_path, &config)
+        .with_context(|| format!("cannot open {}", db_path.display()))?;
     let crawler = Crawler::new(client, config, args.force);
     let (mut indexed, mut skipped, mut failed) = (0, 0, 0);
     for (i, spec) in packages.iter().enumerate() {

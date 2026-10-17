@@ -9,6 +9,7 @@ mod crawl;
 mod git;
 mod output;
 mod scan;
+mod settings;
 mod stats;
 
 use std::fs::File;
@@ -28,6 +29,13 @@ use pelicode_db::{Database, PackageInfo};
 struct Cli {
     #[command(subcommand)]
     command: Command,
+    /// Settings file [default: .pelicode.yaml, .pelicode.yml, .pelicode.json5 or .pelicode.json
+    /// in the current directory or above, up to the root of the git repository].
+    #[arg(long, global = true, value_name = "FILE", display_order = 900)]
+    config: Option<PathBuf>,
+    /// Ignore settings files.
+    #[arg(long, global = true, conflicts_with = "config", display_order = 901)]
+    no_config: bool,
 }
 
 #[derive(Subcommand)]
@@ -97,9 +105,9 @@ struct IndexArgs {
     /// Project directories (or files) to index.
     #[arg(required = true)]
     paths: Vec<PathBuf>,
-    /// Database file.
-    #[arg(long, default_value = "pelicode.db")]
-    db: PathBuf,
+    /// Database file [default: `database` of the settings file, else pelicode.db].
+    #[arg(long)]
+    db: Option<PathBuf>,
     /// Ecosystem the project belongs to.
     #[arg(long, default_value = "local")]
     ecosystem: String,
@@ -145,9 +153,9 @@ struct ExtractArgs {
 
 #[derive(Args)]
 struct ExportArgs {
-    /// Database file.
-    #[arg(long, default_value = "pelicode.db")]
-    db: PathBuf,
+    /// Database file [default: `database` of the settings file, else pelicode.db].
+    #[arg(long)]
+    db: Option<PathBuf>,
     /// Output format.
     #[arg(short, long, value_enum, default_value_t = Format::Text)]
     format: Format,
@@ -195,19 +203,21 @@ fn is_broken_pipe(e: &anyhow::Error) -> bool {
 
 /// Dispatches to the subcommand; `crawl` and `scan` exit with status 1 on failure or match.
 fn run(cli: Cli) -> Result<()> {
+    let loaded = settings::load(cli.config.as_deref(), cli.no_config)?;
+    let settings = loaded.as_ref();
     match cli.command {
-        Command::Index(args) => index(args),
+        Command::Index(args) => index(args, settings),
         Command::Extract(args) => extract(args),
-        Command::Export(args) => export(args),
-        Command::Stats(args) => stats::run(args),
+        Command::Export(args) => export(args, settings),
+        Command::Stats(args) => stats::run(args, settings),
         Command::Crawl(args) => {
-            if !crawl::run(args)? {
+            if !crawl::run(args, settings)? {
                 std::process::exit(1);
             }
             Ok(())
         }
         Command::Scan(args) => {
-            if scan::run(args)? {
+            if scan::run(args, settings)? {
                 std::process::exit(1);
             }
             Ok(())
@@ -219,6 +229,13 @@ fn run(cli: Cli) -> Result<()> {
             Ok(())
         }
     }
+}
+
+/// The database to use: `--db`, else the `database` of the settings, else `pelicode.db`.
+fn database(db: &Option<PathBuf>, settings: Option<&settings::Loaded>) -> PathBuf {
+    db.clone()
+        .or_else(|| settings.and_then(settings::Loaded::database))
+        .unwrap_or_else(|| PathBuf::from("pelicode.db"))
 }
 
 /// Extracts every path; files that fail are reported on stderr and skipped.
@@ -248,15 +265,16 @@ fn extract_paths(paths: &[PathBuf], config: &Config) -> Result<Vec<FileFeatures>
 }
 
 /// `pelicode index`: extracts the given paths and stores them as one package version.
-fn index(args: IndexArgs) -> Result<()> {
+fn index(args: IndexArgs, settings: Option<&settings::Loaded>) -> Result<()> {
     let config = args.features.config(false)?;
+    let db_path = database(&args.db, settings);
     let name = match &args.name {
         Some(name) => name.clone(),
         None => default_name(&args.paths[0])?,
     };
     let files = extract_paths(&args.paths, &config)?;
-    let mut db = Database::open(&args.db, &config)
-        .with_context(|| format!("cannot open {}", args.db.display()))?;
+    let mut db = Database::open(&db_path, &config)
+        .with_context(|| format!("cannot open {}", db_path.display()))?;
     let package = PackageInfo {
         ecosystem: args.ecosystem,
         name,
@@ -277,7 +295,7 @@ fn index(args: IndexArgs) -> Result<()> {
                 package.ecosystem,
                 package.name,
                 package.version,
-                args.db.display()
+                db_path.display()
             );
             println!(
                 "  files: {} ({} new), functions: {} new ({} with fingerprints)",
@@ -338,11 +356,12 @@ fn extract(args: ExtractArgs) -> Result<()> {
 }
 
 /// `pelicode export`: prints the functions stored in the database.
-fn export(args: ExportArgs) -> Result<()> {
-    if !args.db.exists() {
-        bail!("{}: no such database", args.db.display());
+fn export(args: ExportArgs, settings: Option<&settings::Loaded>) -> Result<()> {
+    let db_path = database(&args.db, settings);
+    if !db_path.exists() {
+        bail!("{}: no such database", db_path.display());
     }
-    let db = Database::open_unchecked(&args.db)?;
+    let db = Database::open_unchecked(&db_path)?;
     let rows = db.functions()?;
     let mut out = open_output(args.output.as_deref())?;
     match args.format {
