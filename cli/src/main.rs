@@ -1,3 +1,4 @@
+mod crawl;
 mod git;
 mod output;
 mod scan;
@@ -30,6 +31,8 @@ enum Command {
     Export(ExportArgs),
     /// Reports stored functions similar to the functions of the given code.
     Scan(scan::ScanArgs),
+    /// Fetches packages from a public repository (pypi, maven) and indexes them.
+    Crawl(crawl::CrawlArgs),
     /// Lists the supported languages and their file extensions.
     Languages,
 }
@@ -177,6 +180,12 @@ fn run(cli: Cli) -> Result<()> {
         Command::Index(args) => index(args),
         Command::Extract(args) => extract(args),
         Command::Export(args) => export(args),
+        Command::Crawl(args) => {
+            if !crawl::run(args)? {
+                std::process::exit(1);
+            }
+            Ok(())
+        }
         Command::Scan(args) => {
             if scan::run(args)? {
                 std::process::exit(1);

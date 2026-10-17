@@ -162,7 +162,26 @@ getter/setter、`equals`/`hashCode`、定型的な例外処理など、多数の
 - **重複排除**: ファイル内容の SHA-256 で重複を検出し、同一ファイルは再解析しない（バージョン間で変化のないファイルが大半であるため）。
 - **礼儀**: 各サービスの利用規約・レート制限に従う。User-Agent に連絡先を明記し、並列度とリクエスト間隔を設定可能にする。ミラーやダンプが提供されている場合はそれを優先する。
 - **再開可能性**: 取得状況（未取得 / 取得済み / 失敗 / 索引済み）を記録し、中断後に再開できるようにする。失敗は指数バックオフで再試行する。
-- **保存**: アーカイブは索引化後に削除してよい（設定で保持も可）。ただし、出典を示せるよう取得元 URL とハッシュは必ず保持する。
+- **保存**: アーカイブはディスクに展開・保存せず、メモリ上で読み取って索引化した後に破棄する（ソースコードを手元に残さないため。展開先の外へ書き込む悪意あるエントリ名の影響も受けない）。出典を示せるよう、取得元 URL とハッシュは必ず保持する。
+
+### 5.3 実装（v0.1）
+
+| 項目 | PyPI | Maven Central |
+| --- | --- | --- |
+| バージョンの解決 | JSON API（`/pypi/<name>/json`） | `maven-metadata.xml` の `release` |
+| 取得対象 | sdist（`.tar.gz` / `.zip`）。なければ `py3-none-any` などの wheel | `<artifact>-<version>-sources.jar` |
+| 改ざん検査 | API が示す SHA-256 と照合 | `.sha1` と照合 |
+| ライセンス | `license_expression`（PEP 639）→ classifier → `license`（短いもの） | POM の `<licenses>`。なければ `<parent>` を最大 5 段たどる |
+| 公開日時 | ファイルの `upload_time_iso_8601` | sources jar の `Last-Modified` |
+| リポジトリ URL | `project_urls`（Source, Repository など） | POM の `<scm><url>` または `<url>` |
+| パッケージ名 | PEP 503 で正規化した名前 | `groupId:artifactId` |
+| 上位 N 件 | hugovk/top-pypi-packages（過去 30 日のダウンロード数） | なし（一覧ファイルで指定） |
+
+- ライセンスは、よく使われる表記だけを SPDX 識別子に変換する。変換できない場合は宣言された文字列をそのまま記録する。
+- 上限: アーカイブ 512MB、展開後のソース合計 1GB、1 エントリ 8MB（超えるエントリは生成コードの可能性が高いため読み飛ばす）。
+- HTTP: 直列に取得し、リクエストの間隔を空ける（既定 1 秒）。429・5xx・通信エラーは指数バックオフで最大 4 回まで試す。
+- 取得状況は `package_version.status`（`indexed` / `failed`）と `error` に記録する。既定では `indexed` のバージョンを再取得しない（`--force` で再索引）。
+- 更新の検知（`list_updates(since)`）は未実装。現状は、パッケージ名・一覧ファイル・上位 N 件で対象を指定する。
 
 ## 6. Indexer（データベース構築）
 
@@ -274,8 +293,11 @@ database:
 ## 8. コマンドラインインタフェース（案）
 
 ```
-pelicode crawl   --ecosystem maven --top 10000 --since 2026-01-01
-pelicode index   --archives ./archives --db pelicode.db
+pelicode crawl pypi requests numpy@2.1.0 --db pelicode.db
+pelicode crawl pypi --top 1000 --contact https://example.org/pelicode
+pelicode crawl maven org.apache.commons:commons-lang3 com.google.code.gson:gson:2.11.0
+pelicode crawl maven --list maven-packages.txt
+pelicode index   ./project --db pelicode.db --name demo --version 1.0
 pelicode stats   --db pelicode.db                       # 索引の統計・ストップフィンガープリント
 pelicode snapshot --db pelicode.db --out snapshot.db    # 配布用スナップショット
 pelicode scan    --db pelicode.db ./src                 # ディレクトリ全体

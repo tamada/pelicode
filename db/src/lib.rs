@@ -29,7 +29,7 @@ pub use query::{FunctionInfo, Occurrence, StoredFingerprint};
 pub type Result<T> = std::result::Result<T, Error>;
 
 /// Version of the table layout; databases with another version are rejected.
-pub const SCHEMA_VERSION: u32 = 2;
+pub const SCHEMA_VERSION: u32 = 3;
 
 const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS meta (
@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS package_version (
     archive_sha256 TEXT,
     crawled_at     TEXT,
     status         TEXT NOT NULL,
+    error          TEXT,
     UNIQUE (package_id, version)
 );
 CREATE TABLE IF NOT EXISTS source_file (
@@ -321,7 +322,7 @@ impl Database {
     /// database (same content hash) are linked without storing them again.
     pub fn index(&mut self, pkg: &PackageInfo, files: &[FileFeatures]) -> Result<IndexSummary> {
         let tx = self.conn.transaction()?;
-        let version_id = upsert_version(&tx, pkg)?;
+        let version_id = upsert_version(&tx, pkg, "indexed", None)?;
         tx.execute(
             "DELETE FROM version_file WHERE package_version_id = ?1",
             [version_id],
@@ -354,6 +355,35 @@ impl Database {
         }
         tx.commit()?;
         Ok(summary)
+    }
+
+    /// Status of a package version (`indexed` or `failed`), if recorded.
+    pub fn version_status(
+        &self,
+        ecosystem: &str,
+        name: &str,
+        version: &str,
+    ) -> Result<Option<String>> {
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT pv.status FROM package_version pv
+                 JOIN package p ON p.id = pv.package_id
+                 JOIN ecosystem e ON e.id = p.ecosystem_id
+                 WHERE e.name = ?1 AND p.name = ?2 AND pv.version = ?3",
+                params![ecosystem, name, version],
+                |r| r.get(0),
+            )
+            .optional()?)
+    }
+
+    /// Records that fetching or indexing `pkg` failed, so that it can be retried later.
+    /// Files already linked to the version are kept.
+    pub fn record_failure(&mut self, pkg: &PackageInfo, error: &str) -> Result<()> {
+        let tx = self.conn.transaction()?;
+        upsert_version(&tx, pkg, "failed", Some(error))?;
+        tx.commit()?;
+        Ok(())
     }
 
     pub fn stats(&self) -> Result<Stats> {
@@ -446,7 +476,12 @@ impl Database {
     }
 }
 
-fn upsert_version(tx: &Transaction<'_>, pkg: &PackageInfo) -> Result<i64> {
+fn upsert_version(
+    tx: &Transaction<'_>,
+    pkg: &PackageInfo,
+    status: &str,
+    error: Option<&str>,
+) -> Result<i64> {
     tx.execute(
         "INSERT OR IGNORE INTO ecosystem (name) VALUES (?1)",
         [&pkg.ecosystem],
@@ -467,15 +502,16 @@ fn upsert_version(tx: &Transaction<'_>, pkg: &PackageInfo) -> Result<i64> {
     let version_id: i64 = tx.query_row(
         "INSERT INTO package_version
              (package_id, version, published_at, license_spdx, archive_url, archive_sha256,
-              crawled_at, status)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), 'indexed')
+              crawled_at, status, error)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), ?7, ?8)
          ON CONFLICT (package_id, version) DO UPDATE SET
              published_at   = COALESCE(excluded.published_at, published_at),
              license_spdx   = COALESCE(excluded.license_spdx, license_spdx),
              archive_url    = COALESCE(excluded.archive_url, archive_url),
              archive_sha256 = COALESCE(excluded.archive_sha256, archive_sha256),
              crawled_at     = excluded.crawled_at,
-             status         = 'indexed'
+             status         = excluded.status,
+             error          = excluded.error
          RETURNING id",
         params![
             package_id,
@@ -483,7 +519,9 @@ fn upsert_version(tx: &Transaction<'_>, pkg: &PackageInfo) -> Result<i64> {
             pkg.published_at,
             pkg.license_spdx,
             pkg.archive_url,
-            pkg.archive_sha256
+            pkg.archive_sha256,
+            status,
+            error
         ],
         |r| r.get(0),
     )?;
@@ -664,6 +702,32 @@ class A {
             "{lines:?}"
         );
         assert_eq!(rows[0].license.as_deref(), Some("MIT"));
+    }
+
+    #[test]
+    fn records_crawl_status() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut db = Database::open(dir.path().join("t.db"), &Config::default()).unwrap();
+        assert_eq!(db.version_status("local", "demo", "1.0").unwrap(), None);
+        db.record_failure(&pkg("1.0"), "network down").unwrap();
+        assert_eq!(
+            db.version_status("local", "demo", "1.0")
+                .unwrap()
+                .as_deref(),
+            Some("failed")
+        );
+        db.index(&pkg("1.0"), &[file("A.java")]).unwrap();
+        assert_eq!(
+            db.version_status("local", "demo", "1.0")
+                .unwrap()
+                .as_deref(),
+            Some("indexed")
+        );
+        let error: Option<String> = db
+            .conn
+            .query_row("SELECT error FROM package_version", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(error, None);
     }
 
     #[test]

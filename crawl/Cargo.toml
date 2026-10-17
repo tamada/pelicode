@@ -1,0 +1,20 @@
+[package]
+name = "pelicode-crawl"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+flate2 = "1.1.10"
+httpdate = "1.0.3"
+humantime = "2.4.0"
+pelicode-core = { version = "0.1.0", path = "../core" }
+pelicode-db = { version = "0.1.0", path = "../db" }
+rayon = "1.12.0"
+roxmltree = "0.21.1"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+sha1 = "0.11.0"
+tar = "0.4.46"
+thiserror = "2.0.21"
+ureq = "3.4.2"
+zip = { version = "9.0.4", default-features = false, features = ["deflate"] }
