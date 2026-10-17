@@ -201,6 +201,33 @@ crawl:
 
 pelicode はカレントディレクトリから上に向かって、git リポジトリのルートまで設定ファイルを探します。コマンドラインで指定したオプションは、設定ファイルより優先されます。`--config FILE` で別のファイルを指定でき、`--no-config` で設定ファイルを無視できます。書ける項目の一覧は [Usage](https://tamada.github.io/pelicode/usage/#-settings-file)（英語）を見てください。
 
+### GitHub Action
+
+このリポジトリは、PR を検査して、候補を Code Scanning で表示する GitHub Action としても使えます。
+
+```yaml
+# .github/workflows/pelicode.yaml
+name: pelicode
+on: pull_request
+
+permissions:
+  contents: read
+  security-events: write   # Code Scanning に結果をアップロードするため
+
+jobs:
+  pelicode:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0       # PR と base を比べるため
+      - uses: tamada/pelicode@v0.1.0
+        with:
+          database-url: https://example.org/pelicode/pelicode.db
+```
+
+入力の一覧は [Usage](https://tamada.github.io/pelicode/usage/#-github-action)（英語）を見てください。
+
 ### extract / export: 中身の確認
 
 ```bash
@@ -243,7 +270,6 @@ just --list      # CI が実行するタスクの一覧（https://just.systems/ 
 
 ## 未実装のもの
 
-- GitHub の PR を検査するボット（GitHub Actions / GitHub App）
 - 新しく公開されたバージョンの自動検知（現状は、パッケージ名・一覧ファイル・上位 N 件で指定します）
 - 配布用の DB スナップショット（`pelicode snapshot`）と、評価実験用のコマンド（`pelicode eval`）
 - Go・Maven・RubyGems のダウンロード数上位の取得

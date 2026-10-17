@@ -1,0 +1,134 @@
+name: pelicode
+description: Find functions similar to published open-source code in pull requests, with their sources and licenses.
+author: Haruaki Tamada
+branding:
+  icon: search
+  color: orange
+
+inputs:
+  database:
+    description: >-
+      Database file to search. Defaults to the `database` of the settings file,
+      else pelicode.db (or the downloaded file with database-url).
+    required: false
+    default: ""
+  database-url:
+    description: URL to download the database from before scanning.
+    required: false
+    default: ""
+  config:
+    description: Settings file. Defaults to .pelicode.yaml (or .yml, .json5, .json) of the repository.
+    required: false
+    default: ""
+  range:
+    description: >-
+      Git range to check. Defaults to the changes of the pull request, or of the
+      push; other events check the whole repository.
+    required: false
+    default: ""
+  paths:
+    description: Files or directories to check instead of a git range (space-separated).
+    required: false
+    default: ""
+  working-directory:
+    description: Directory to run in, normally the root of the repository.
+    required: false
+    default: "."
+  args:
+    description: Other options of `pelicode scan`, such as `--threshold 0.6 --languages java,kotlin`.
+    required: false
+    default: ""
+  fail-on-match:
+    description: Fail the step when candidates are found (after the SARIF upload).
+    required: false
+    default: "false"
+  upload-sarif:
+    description: >-
+      Upload the results to GitHub code scanning; needs the permission
+      `security-events: write`, which pull requests from forks do not get.
+    required: false
+    default: "true"
+  sarif-file:
+    description: Where to write the SARIF log, relative to the working directory.
+    required: false
+    default: pelicode.sarif
+  pelicode-version:
+    description: >-
+      Release of pelicode to install, such as `0.1.0`, or `source` to build the
+      action's own source. Defaults to the release of the action's tag when the
+      action is used at a tag such as `v0.1.0`, else `source`.
+    required: false
+    default: ""
+  pelicode-path:
+    description: An installed pelicode binary to use instead of installing one.
+    required: false
+    default: ""
+  token:
+    description: Token to download releases with.
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  candidates:
+    description: Number of checked functions with candidates.
+    value: ${{ steps.scan.outputs.candidates }}
+  sarif-file:
+    description: Path of the SARIF log.
+    value: ${{ steps.scan.outputs.sarif-file }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install pelicode
+      id: install
+      shell: bash
+      env:
+        PELICODE_VERSION: ${{ inputs.pelicode-version }}
+        PELICODE_PATH: ${{ inputs.pelicode-path }}
+        ACTION_REF: ${{ github.action_ref }}
+        GH_TOKEN: ${{ inputs.token }}
+      run: '"$GITHUB_ACTION_PATH/action/install.sh"'
+
+    - name: Download the database
+      if: inputs.database-url != ''
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        URL: ${{ inputs.database-url }}
+        DATABASE: ${{ inputs.database }}
+      run: curl -fsSL --retry 3 -o "${DATABASE:-pelicode.db}" "$URL"
+
+    - name: Scan
+      id: scan
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        PELICODE: ${{ steps.install.outputs.path }}
+        DATABASE: ${{ inputs.database != '' && inputs.database || (inputs.database-url != '' && 'pelicode.db' || '') }}
+        CONFIG: ${{ inputs.config }}
+        RANGE: ${{ inputs.range }}
+        PATHS: ${{ inputs.paths }}
+        ARGS: ${{ inputs.args }}
+        SARIF_FILE: ${{ inputs.sarif-file }}
+        EVENT_NAME: ${{ github.event_name }}
+        BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        BEFORE: ${{ github.event.before }}
+        AFTER: ${{ github.sha }}
+      run: '"$GITHUB_ACTION_PATH/action/scan.sh"'
+
+    - name: Upload to code scanning
+      if: inputs.upload-sarif == 'true'
+      uses: github/codeql-action/upload-sarif@v4
+      with:
+        sarif_file: ${{ steps.scan.outputs.sarif-file }}
+        category: pelicode
+
+    - name: Fail on candidates
+      if: inputs.fail-on-match == 'true' && steps.scan.outputs.candidates != '0'
+      shell: bash
+      env:
+        COUNT: ${{ steps.scan.outputs.candidates }}
+      run: |
+        echo "::error::pelicode found similar code candidates in ${COUNT} function(s); see the summary."
+        exit 1

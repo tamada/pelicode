@@ -201,6 +201,33 @@ crawl:
 
 pelicode looks for it in the current directory and above, up to the root of the git repository. Options on the command line win over it; `--config FILE` names another file and `--no-config` ignores it. See [Usage](https://tamada.github.io/pelicode/usage/#-settings-file) for every key.
 
+### GitHub Action
+
+The repository is also a GitHub Action that checks pull requests and shows the candidates through code scanning:
+
+```yaml
+# .github/workflows/pelicode.yaml
+name: pelicode
+on: pull_request
+
+permissions:
+  contents: read
+  security-events: write   # to upload the results to code scanning
+
+jobs:
+  pelicode:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0       # pelicode compares the pull request with its base
+      - uses: tamada/pelicode@v0.1.0
+        with:
+          database-url: https://example.org/pelicode/pelicode.db
+```
+
+See [Usage](https://tamada.github.io/pelicode/usage/#-github-action) for its inputs.
+
 ### extract / export: looking inside
 
 ```bash
@@ -243,7 +270,6 @@ just --list      # the tasks CI runs (with https://just.systems/)
 
 ## Not implemented yet
 
-- A bot that checks GitHub pull requests (GitHub Actions / GitHub App)
 - Automatic detection of newly published versions (packages are currently given by name, by a list file or as the top N)
 - Distributable database snapshots (`pelicode snapshot`) and a command for evaluation experiments (`pelicode eval`)
 - Fetching the most downloaded packages of Go, Maven Central and RubyGems

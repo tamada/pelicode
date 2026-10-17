@@ -380,7 +380,19 @@ crawl:
   contact: https://example.org/about
 ```
 
-### 8.3 出力形式
+### 8.3 GitHub Action
+
+このリポジトリは、PR を検査する composite な GitHub Action（`action.yml`）でもある。
+
+1. **インストール**: Action をタグで使った場合（`uses: tamada/pelicode@vX.Y.Z`）は、そのリリースから実行環境のプラットフォームに合うバイナリを取得する。それ以外の ref では、Action 自身のソースを Cargo でビルドする。`pelicode-path` で既存のバイナリも指定できる。
+2. **DB**: `database-url` があればダウンロードする。なければ `database`、設定ファイル、`pelicode.db` の順に使う。
+3. **検査**: PR なら `base...head`、push なら `before..after`、それ以外のイベントとブランチを作る push ではリポジトリ全体を、`pelicode scan -f sarif` で検査する。`range`、`paths`、`config`、`args` で上書きできる。
+4. **報告**: 候補のある関数の数を出力 `candidates` に、候補の一覧をジョブのサマリーに書く。`upload-sarif` が `false` でなければ、SARIF を Code Scanning にアップロードする（`github/codeql-action/upload-sarif`、カテゴリ `pelicode`）。
+5. **失敗**: `fail-on-match` を指定した場合だけ、アップロードの後に失敗させる（注釈が残るようにするため）。設定ファイルの `fail_on_match` があっても、アップロードの前には止めない。
+
+処理は `action/install.sh` と `action/scan.sh` にあり、workflow（`test_action`）が、関数をコピーしたリポジトリで Action を動かして出力を確かめる。
+
+### 8.4 出力形式
 
 | コマンド | text | JSON | CSV |
 | --- | --- | --- | --- |
@@ -393,14 +405,14 @@ crawl:
 
 パスはどの OS でも `/` 区切りで記録・出力する。
 
-### 8.4 終了コード
+### 8.5 終了コード
 
 | 終了コード | 意味 |
 | --- | --- |
 | 0 | 成功 |
 | 1 | エラー、`crawl` で失敗したパッケージがある、または `scan --fail-on-match` で候補が見つかった |
 
-### 8.5 ライブラリ
+### 8.6 ライブラリ
 
 pelicode-core、pelicode-db、pelicode-detect、pelicode-crawl はライブラリとしても使える。すべての公開 API に説明と使用例（doctest）を付ける。
 
@@ -485,6 +497,7 @@ pelicode-core、pelicode-db、pelicode-detect、pelicode-crawl はライブラ�
 | ディレクトリ・git の範囲の検査、text / JSON / CSV 出力 | 実装済み |
 | YAML・JSON5 の設定ファイル | 実装済み |
 | SARIF 出力 | 実装済み |
+| PR を検査する GitHub Action | 実装済み |
 | CI、リリース、コンテナ、ドキュメントサイト | 実装済み（実際のリリースは未実施） |
 
 ### 12.2 未実装の機能
@@ -495,7 +508,6 @@ pelicode-core、pelicode-db、pelicode-detect、pelicode-crawl はライブラ�
 | 新しいバージョンの検知 | crates.io の RSS、PyPI の更新情報、index.golang.org などを使った `list_updates(since)` |
 | スナップショット | ソースコードを含まない配布用 DB の作成（`pelicode snapshot`）と配布 |
 | データベースの掃除 | 参照されなくなったファイル・関数の削除と容量の圧縮 |
-| PR 検査ボット | GitHub Action として提供し、Check Run の注釈と PR へのコメントで候補を示す。既定ではマージを妨げない（`neutral`） |
 | 評価実験 | `pelicode eval` と評価データの生成（§11.1） |
 | git コマンドへの依存の解消 | gix（Rust 実装の git）による差分の取得 |
 

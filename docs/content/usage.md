@@ -5,7 +5,7 @@ date: 2026-10-17
 draft: false
 ---
 
-[ [📋 Synopsis](#-synopsis) | [🧰 Commands](#-commands) | [📝 Settings File](#-settings-file) | [🎛️ Feature Parameters](#-feature-parameters) | [📤 Output Formats](#-output-formats) | [🚦 Exit Status](#-exit-status) | [🔧 Tuning the Search](#-tuning-the-search) ]
+[ [📋 Synopsis](#-synopsis) | [🧰 Commands](#-commands) | [📝 Settings File](#-settings-file) | [🤖 GitHub Action](#-github-action) | [🎛️ Feature Parameters](#-feature-parameters) | [📤 Output Formats](#-output-formats) | [🚦 Exit Status](#-exit-status) | [🔧 Tuning the Search](#-tuning-the-search) ]
 
 ---
 
@@ -302,6 +302,62 @@ crawl:
 Unknown keys are errors, so that a misspelled key does not go unnoticed; the message names the file and, for YAML, the line.
 
 The paths matched by `exclude.paths` are the paths `scan` reports: relative to the directory given, or to the repository with `--git`.
+
+---
+
+## 🤖 GitHub Action
+
+The repository is also a GitHub Action that checks the functions changed by a pull request or a push, shows the candidates in the pull request through GitHub code scanning, and lists them in the summary of the job.
+
+```yaml
+# .github/workflows/pelicode.yaml
+name: pelicode
+on: pull_request
+
+permissions:
+  contents: read
+  security-events: write   # to upload the results to code scanning
+
+jobs:
+  pelicode:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0       # pelicode compares the pull request with its base
+      - uses: tamada/pelicode@v0.1.0
+        with:
+          database-url: https://example.org/pelicode/pelicode.db
+```
+
+What it does:
+
+1. **Installs pelicode**: the release of the action's tag (`tamada/pelicode@v0.1.0` installs pelicode 0.1.0); used at a branch, it builds the action's own source with Cargo.
+2. **Downloads the database** from `database-url`, if given.
+3. **Scans** the changes of the pull request (`base...head`) or of the push (`before..after`); other events, and pushes creating a branch, check the whole repository. The settings file of the repository applies.
+4. **Uploads** the SARIF log to code scanning, where each candidate is a note on the function, and writes the candidates to the summary of the job.
+5. **Fails** the step after the upload, only with `fail-on-match: true`.
+
+| Input | Default | Description |
+| --- | --- | --- |
+| `database` | settings file, else `pelicode.db` | Database file |
+| `database-url` | | URL to download the database from |
+| `config` | `.pelicode.yaml` and the like | Settings file |
+| `range` | from the event | Git range to check |
+| `paths` | | Files or directories to check instead of a git range |
+| `working-directory` | `.` | Directory to run in |
+| `args` | | Other options of `pelicode scan`, such as `--threshold 0.6` |
+| `fail-on-match` | `false` | Fail when candidates are found |
+| `upload-sarif` | `true` | Upload to code scanning |
+| `sarif-file` | `pelicode.sarif` | Where to write the SARIF log |
+| `pelicode-version` | the action's tag, else `source` | Release to install, or `source` |
+| `pelicode-path` | | An installed binary to use |
+
+The outputs are `candidates`, the number of functions with candidates, and `sarif-file`.
+
+{{< alert icon="circle-info" >}}
+Uploading to code scanning needs `security-events: write`, which pull requests from forks do not get; set `upload-sarif: false` for them, and the candidates are still listed in the summary. Code scanning is free for public repositories; private repositories need GitHub Advanced Security.
+{{< /alert >}}
 
 ---
 

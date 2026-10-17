@@ -380,7 +380,19 @@ crawl:
   contact: https://example.org/about
 ```
 
-### 8.3 Output Formats
+### 8.3 GitHub Action
+
+The repository is a composite GitHub Action (`action.yml`) for checking pull requests:
+
+1. **Install**: the release of the action's tag (`uses: tamada/pelicode@vX.Y.Z`), downloaded from the releases of the repository for the runner's platform; at other refs, the action's own source built with Cargo; or a binary given by `pelicode-path`.
+2. **Database**: downloaded from `database-url`, if given; otherwise `database`, the settings file, or `pelicode.db`.
+3. **Scan**: `pelicode scan -f sarif` over `base...head` of a pull request, `before..after` of a push, or the whole repository for other events and for pushes creating a branch; `range`, `paths`, `config` and `args` override this.
+4. **Report**: the number of functions with candidates as the output `candidates`, the candidates in the summary of the job, and the SARIF log uploaded to code scanning (`github/codeql-action/upload-sarif`, category `pelicode`) unless `upload-sarif` is `false`.
+5. **Fail**: only with `fail-on-match`, after the upload, so that the notes appear. A `fail_on_match` in the settings file does not stop the action before the upload.
+
+The logic is in `action/install.sh` and `action/scan.sh`, and a workflow (`test_action`) runs the action on a repository with a copied function and checks its outputs.
+
+### 8.4 Output Formats
 
 | Command | text | JSON | CSV |
 | --- | --- | --- | --- |
@@ -393,14 +405,14 @@ crawl:
 
 Paths are recorded and printed with `/` on every platform.
 
-### 8.4 Exit Status
+### 8.5 Exit Status
 
 | Status | Meaning |
 | --- | --- |
 | 0 | Success |
 | 1 | An error; `crawl` failed for a package; or `scan --fail-on-match` found a candidate |
 
-### 8.5 Libraries
+### 8.6 Libraries
 
 pelicode-core, pelicode-db, pelicode-detect and pelicode-crawl can be used as libraries. Every public item is documented, and every public function has an example (doctest).
 
@@ -485,6 +497,7 @@ A command that runs evaluation experiments (`pelicode eval`) is not implemented 
 | Checking directories and git ranges; text, JSON and CSV | Done |
 | Settings files in YAML and JSON5 | Done |
 | SARIF output | Done |
+| GitHub Action for pull requests | Done |
 | CI, release, container, documentation site | Done (no release made yet) |
 
 ### 12.2 Not Implemented Yet
@@ -495,7 +508,6 @@ A command that runs evaluation experiments (`pelicode eval`) is not implemented 
 | Detection of new versions | `list_updates(since)` with the RSS feeds of crates.io, PyPI updates, index.golang.org, ... |
 | Snapshots | Creating (`pelicode snapshot`) and distributing databases without source code |
 | Database cleanup | Removing files and functions no longer referenced, and compacting the database |
-| Pull request bot | A GitHub Action showing candidates as check run annotations and a pull request comment; by default it does not block merging (`neutral`) |
 | Evaluation | `pelicode eval` and the generation of evaluation data (§11.1) |
 | No dependency on the git command | Reading diffs with gix, the Rust implementation of git |
 
