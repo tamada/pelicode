@@ -59,3 +59,95 @@ fn extract_formats() {
     assert_eq!(first["name"], "initialize");
     assert!(first["tokens"]["N1"].is_array());
 }
+
+fn git(repo: &Path, args: &[&str]) {
+    let status = Command::new("git")
+        .arg("-C")
+        .arg(repo)
+        .args(["-c", "user.name=test", "-c", "user.email=test@example.com"])
+        .args(args)
+        .status()
+        .unwrap();
+    assert!(status.success());
+}
+
+#[test]
+fn scans_changed_functions_of_a_git_range() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = db_arg(dir.path());
+    pelicode(&["index", FIXTURE, "--db", &db, "--min-tokens", "10"]);
+
+    let repo = dir.path().join("repo");
+    std::fs::create_dir(&repo).unwrap();
+    git(&repo, &["init", "-q"]);
+    std::fs::write(repo.join("README.md"), "demo\n").unwrap();
+    git(&repo, &["add", "."]);
+    git(&repo, &["commit", "-q", "-m", "init"]);
+    std::fs::copy(
+        Path::new(FIXTURE).join("src/Stack.java"),
+        repo.join("Copied.java"),
+    )
+    .unwrap();
+    git(&repo, &["add", "."]);
+    git(&repo, &["commit", "-q", "-m", "copy"]);
+
+    let repo_arg = repo.to_string_lossy().into_owned();
+    let scan = |range: &str| -> serde_json::Value {
+        serde_json::from_str(&pelicode(&[
+            "scan",
+            &repo_arg,
+            "--db",
+            &db,
+            "--git",
+            range,
+            "--min-tokens",
+            "10",
+            "-f",
+            "json",
+        ]))
+        .unwrap()
+    };
+    let reports = scan("HEAD~1..HEAD");
+    let names: Vec<_> = reports
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, ["push", "pop"]);
+    assert_eq!(reports[0]["candidates"][0]["match"]["type"], "exact");
+    assert_eq!(
+        reports[0]["candidates"][0]["occurrences"][0]["path"],
+        "src/Stack.java"
+    );
+
+    // Nothing changed in the working tree.
+    assert_eq!(scan("HEAD"), serde_json::json!([]));
+
+    let status = Command::new(env!("CARGO_BIN_EXE_pelicode"))
+        .args([
+            "scan",
+            &repo_arg,
+            "--db",
+            &db,
+            "--min-tokens",
+            "10",
+            "--fail-on-match",
+        ])
+        .output()
+        .unwrap()
+        .status;
+    assert_eq!(status.code(), Some(1));
+}
+
+#[test]
+fn several_directories_keep_distinct_paths() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = db_arg(dir.path());
+    let src = format!("{FIXTURE}/src");
+    let lib = format!("{FIXTURE}/lib");
+    pelicode(&["index", &src, &lib, "--db", &db, "--name", "demo"]);
+    let csv = pelicode(&["export", "--db", &db, "-f", "csv"]);
+    assert!(csv.contains(",src/Stack.java,"), "{csv}");
+    assert!(csv.contains(",lib/stack.py,"), "{csv}");
+}

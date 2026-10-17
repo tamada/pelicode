@@ -14,7 +14,9 @@ pub mod scan;
 use std::path::PathBuf;
 
 pub use config::{Config, IdentMode, Level, NORMALIZER_VERSION};
-pub use extract::{FileFeatures, FunctionFeatures, LevelFeatures, extract_file, extract_source};
+pub use extract::{
+    FileFeatures, FunctionFeatures, LevelFeatures, extract_bytes, extract_file, extract_source,
+};
 pub use hash::{Fingerprint, Hash128};
 pub use language::Language;
 pub use scan::{SourceFile, discover, extract_all};

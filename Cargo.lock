@@ -488,6 +488,7 @@ dependencies = [
  "csv",
  "pelicode-core",
  "pelicode-db",
+ "pelicode-detect",
  "serde",
  "serde_json",
  "tempfile",
@@ -518,6 +519,17 @@ version = "0.1.0"
 dependencies = [
  "pelicode-core",
  "rusqlite",
+ "serde",
+ "tempfile",
+ "thiserror",
+]
+
+[[package]]
+name = "pelicode-detect"
+version = "0.1.0"
+dependencies = [
+ "pelicode-core",
+ "pelicode-db",
  "serde",
  "tempfile",
  "thiserror",

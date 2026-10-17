@@ -2,6 +2,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
+use std::str::FromStr;
 
 use pelicode_core::{Config, FileFeatures, Level, NORMALIZER_VERSION};
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
@@ -17,7 +18,13 @@ pub enum Error {
         stored: String,
         current: String,
     },
+    #[error("invalid value in database meta: {0}")]
+    InvalidMeta(String),
 }
+
+mod query;
+
+pub use query::{FunctionInfo, Occurrence, StoredFingerprint};
 
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -231,6 +238,51 @@ impl Database {
         let mut stmt = self.conn.prepare("SELECT key, value FROM meta")?;
         let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// `base` with the parameters recorded in the database, so that queries are
+    /// featurized exactly like the stored functions. Fingerprint levels become
+    /// the levels that actually have fingerprints in the database.
+    pub fn config_from_meta(&self, base: &Config) -> Result<Config> {
+        let stored = self.meta()?;
+        fn parse<T: FromStr>(
+            stored: &BTreeMap<String, String>,
+            key: &str,
+            value: &mut T,
+        ) -> Result<()> {
+            if let Some(s) = stored.get(key) {
+                *value = s
+                    .parse()
+                    .map_err(|_| Error::InvalidMeta(format!("{key} = {s}")))?;
+            }
+            Ok(())
+        }
+        let mut version = NORMALIZER_VERSION;
+        parse(&stored, "normalizer_version", &mut version)?;
+        if version != NORMALIZER_VERSION {
+            return Err(Error::Incompatible {
+                key: "normalizer_version".into(),
+                stored: version.to_string(),
+                current: NORMALIZER_VERSION.to_string(),
+            });
+        }
+        let mut config = base.clone();
+        parse(&stored, "ident_mode", &mut config.ident_mode)?;
+        parse(&stored, "kgram", &mut config.kgram)?;
+        parse(&stored, "window", &mut config.window)?;
+        parse(&stored, "minhash_size", &mut config.minhash_size)?;
+        parse(&stored, "bands", &mut config.bands)?;
+
+        let mut stmt = self
+            .conn
+            .prepare("SELECT DISTINCT level FROM minhash ORDER BY level")?;
+        let levels: Vec<u8> = stmt
+            .query_map([], |r| r.get(0))?
+            .collect::<rusqlite::Result<_>>()?;
+        if !levels.is_empty() {
+            config.fingerprint_levels = levels.into_iter().filter_map(Level::from_u8).collect();
+        }
+        Ok(config)
     }
 
     fn check_meta(&self, config: &Config) -> Result<()> {

@@ -82,12 +82,21 @@ pub fn extract_file(
     config: &Config,
 ) -> Result<FileFeatures, Error> {
     let content = std::fs::read(path).map_err(|e| Error::Io(path.to_path_buf(), e))?;
-    let functions = extract_source(language, &content, config)?;
+    extract_bytes(display_path, language, &content, config)
+}
+
+/// Extracts a file whose content is already in memory (e.g. read from a git revision).
+pub fn extract_bytes(
+    path: &Path,
+    language: Language,
+    content: &[u8],
+    config: &Config,
+) -> Result<FileFeatures, Error> {
     Ok(FileFeatures {
-        path: display_path.to_path_buf(),
+        path: path.to_path_buf(),
         language,
-        content_sha256: sha256_hex(&content),
-        functions,
+        content_sha256: sha256_hex(content),
+        functions: extract_source(language, content, config)?,
     })
 }
 

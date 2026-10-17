@@ -1,4 +1,6 @@
+mod git;
 mod output;
+mod scan;
 
 use std::fs::File;
 use std::io::{self, BufWriter, Write};
@@ -26,6 +28,8 @@ enum Command {
     Extract(ExtractArgs),
     /// Prints the functions stored in the database.
     Export(ExportArgs),
+    /// Reports stored functions similar to the functions of the given code.
+    Scan(scan::ScanArgs),
     /// Lists the supported languages and their file extensions.
     Languages,
 }
@@ -173,6 +177,12 @@ fn run(cli: Cli) -> Result<()> {
         Command::Index(args) => index(args),
         Command::Extract(args) => extract(args),
         Command::Export(args) => export(args),
+        Command::Scan(args) => {
+            if scan::run(args)? {
+                std::process::exit(1);
+            }
+            Ok(())
+        }
         Command::Languages => {
             for lang in Language::ALL {
                 println!("{:<8} {}", lang.name(), lang.extensions().join(", "));
@@ -183,13 +193,24 @@ fn run(cli: Cli) -> Result<()> {
 }
 
 /// Extracts every path; files that fail are reported on stderr and skipped.
+/// Paths of files under a directory are relative to it; with several
+/// directories they are prefixed with the directory name so that, e.g.,
+/// `json/__init__.py` and `http/__init__.py` stay distinct.
 fn extract_paths(paths: &[PathBuf], config: &Config) -> Result<Vec<FileFeatures>> {
     let mut results = Vec::new();
     for path in paths {
         let files = discover(path).with_context(|| format!("cannot scan {}", path.display()))?;
+        let prefix = (paths.len() > 1 && path.is_dir())
+            .then(|| path.canonicalize().ok()?.file_name().map(PathBuf::from))
+            .flatten();
         for result in extract_all(&files, config) {
             match result {
-                Ok(file) => results.push(file),
+                Ok(mut file) => {
+                    if let Some(prefix) = &prefix {
+                        file.path = prefix.join(&file.path);
+                    }
+                    results.push(file);
+                }
                 Err(e) => eprintln!("warning: {e}"),
             }
         }

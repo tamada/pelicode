@@ -1,0 +1,13 @@
+[package]
+name = "pelicode-detect"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+pelicode-core = { version = "0.1.0", path = "../core" }
+pelicode-db = { version = "0.1.0", path = "../db" }
+serde = { version = "1.0.229", features = ["derive"] }
+thiserror = "2.0.21"
+
+[dev-dependencies]
+tempfile = "3.27.0"
