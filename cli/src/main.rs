@@ -106,7 +106,7 @@ struct IndexArgs {
     #[arg(long)]
     repository: Option<String>,
     /// Format of the summary.
-    #[arg(long, value_enum, default_value_t = SummaryFormat::Text)]
+    #[arg(short, long, value_enum, default_value_t = SummaryFormat::Text)]
     format: SummaryFormat,
     /// Rebuild the per-hash package counts afterwards (see `pelicode stats`).
     #[arg(long)]
