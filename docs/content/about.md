@@ -34,7 +34,7 @@ pelicode is the prototype of a research project on infrastructure that detects s
 
 ## 🗺️ Status and Roadmap
 
-pelicode is a research prototype (v0.1). It can build a database from PyPI, Maven Central, the Go module proxy and RubyGems, and check Go, Java, Kotlin, Python and Ruby code against it, from the command line.
+pelicode is a research prototype (v0.1). It can build a database from PyPI, Maven Central, the Go module proxy, RubyGems and crates.io, and check Go, Java, Kotlin, Python, Ruby and Rust code against it, from the command line. pelicode checks its own code, too.
 
 Planned next:
 

@@ -32,7 +32,7 @@ enum Command {
     Export(ExportArgs),
     /// Reports stored functions similar to the functions of the given code.
     Scan(scan::ScanArgs),
-    /// Fetches packages from a public repository (pypi, maven, go, rubygems) and indexes them.
+    /// Fetches packages from a public repository (pypi, maven, go, rubygems, crates) and indexes them.
     Crawl(crawl::CrawlArgs),
     /// Shows database statistics and the hashes shared by the most packages.
     Stats(stats::StatsArgs),

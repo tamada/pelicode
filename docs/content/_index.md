@@ -25,7 +25,7 @@ outputs:
 
 Developers no longer write every line themselves. Code comes from AI assistants and from pull requests by people outside the team, and reading all of it to make sure none was copied from somewhere else is not possible.
 
-[dependabot](https://docs.github.com/en/code-security/dependabot) checks the versions of your dependencies against package repositories and tells you when to upgrade. **pelicode** works in a similar spirit for the code itself: it checks the functions in your repository, or only those changed by a commit or a pull request, against the functions of packages published on PyPI, Maven Central, the Go module proxy and RubyGems.
+[dependabot](https://docs.github.com/en/code-security/dependabot) checks the versions of your dependencies against package repositories and tells you when to upgrade. **pelicode** works in a similar spirit for the code itself: it checks the functions in your repository, or only those changed by a commit or a pull request, against the functions of packages published on PyPI, Maven Central, the Go module proxy, RubyGems and crates.io.
 
 Matching is done on normalized syntax trees, not on text, so renamed variables, reformatting, edited comments and a few added or removed statements do not hide a match.
 
@@ -39,7 +39,7 @@ Matching is done on normalized syntax trees, not on text, so renamed variables, 
 
 {{< mermaid >}}
 flowchart LR
-    R[("PyPI / Maven Central<br/>Go proxy / RubyGems")] -->|pelicode crawl| I
+    R[("PyPI / Maven Central / crates.io<br/>Go proxy / RubyGems")] -->|pelicode crawl| I
     P["Local projects"] -->|pelicode index| I
     I["Extract, normalize<br/>and hash functions"] --> D[("SQLite database")]
     D -->|pelicode stats --refresh| D
@@ -54,7 +54,7 @@ flowchart LR
 4. **Count** how many packages contain each hash with `pelicode stats --refresh`, so that boilerplate found everywhere can be ignored.
 5. **Scan** your code with `pelicode scan`, and review the candidates it reports.
 
-Supported languages are **Go, Java, Kotlin, Python and Ruby**.
+Supported languages are **Go, Java, Kotlin, Python, Ruby and Rust**.
 
 ---
 

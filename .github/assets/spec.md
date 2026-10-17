@@ -81,6 +81,7 @@ dependabot が依存ライブラリのバージョンを定期的に外部リポ
 
 - 構文解析には Tree-sitter を用いる。言語ごとに「関数とみなすノード型」の定義を持つ（例: Java は `method_declaration`, `constructor_declaration`, `lambda_expression`）。
 - **初期対象言語は Go, Java, Kotlin, Python, Ruby の 5 言語**とする。いずれもパッケージリポジトリからソースコードを直接取得できることを選定理由とする（§5.1）。
+- pelicode 自身（Rust 製）を検査するため、**Rust** を追加した（crates.io の `.crate` もソースをそのまま含む）。
 - 言語ごとの定義（関数とみなすノード型、正規化規則）は言語アダプタとして分離し、言語の追加はアダプタの追加で行えるようにする。
 - 詳細な精度評価は Java と Python を中心に行う（Java は BigCloneBench 等の評価データが利用できる）。その他の言語は抽出・基本的な検出の動作確認を主とする。
 
@@ -93,8 +94,9 @@ dependabot が依存ライブラリのバージョンを定期的に外部リポ
 | Kotlin | コミュニティ製 | 関数宣言（拡張関数を含む）、ラムダ、無名関数、プロパティのアクセサ | 文法が公式でないため、バージョンを固定して利用する。Java からの機械変換コードとの対応も評価対象になり得る |
 | Python | 公式 (`tree-sitter-python`) | 関数定義、メソッド定義、ラムダ（一定規模以上） | docstring とデコレータの扱い |
 | Ruby | 公式 (`tree-sitter-ruby`) | メソッド定義、特異メソッド定義、ブロック、lambda | 括弧の省略など表記の揺れが大きい。`define_method` 等による動的定義は対象外 |
+| Rust | 公式 (`tree-sitter-rust`) | 関数・メソッド（`function_item`）、クロージャ | 本体のないトレイトのメソッド宣言は対象外。マクロ呼び出しの中身はトークン列として扱う。`;` は式と文を区別するので除去しない |
 
-将来の追加候補: Rust, JavaScript/TypeScript, C#, C/C++, PHP, Swift。C/C++ はプリプロセッサ、Rust はマクロ、JavaScript は minify 済みコード、C# はソースを含まないパッケージ（NuGet）への対処が必要である。
+将来の追加候補: JavaScript/TypeScript, C#, C/C++, PHP, Swift。C/C++ はプリプロセッサ、JavaScript は minify 済みコード、C# はソースを含まないパッケージ（NuGet）への対処が必要である。
 - 入れ子の関数は、外側・内側をそれぞれ独立した関数として抽出し、親子関係を記録する。
 - 構文エラーを含むファイルは、エラーノードを含まない関数のみ抽出する。
 - 各関数について、ファイルパス・開始/終了行・関数名（表示用。照合には使わない）を記録する。
@@ -172,9 +174,10 @@ getter/setter、`equals`/`hashCode`、定型的な例外処理など、多数の
 | Maven Central | Java, Kotlin | `-sources.jar` | Maven Central Index の差分 |
 | PyPI | Python | sdist（なければ wheel 内の `.py`） | JSON API、PyPI の更新フィード |
 | RubyGems | Ruby | `.gem` アーカイブ | RubyGems API、公式 DB ダンプ |
+| crates.io | Rust | `.crate` アーカイブ | sparse index、RSS フィード、公式 DB ダンプ |
 | GitHub（任意） | 全言語 | 指定リポジトリのタグ | GitHub API |
 
-- 初期段階では Maven Central と PyPI（詳細評価の対象言語）から始め、Go Module Proxy と RubyGems を順次追加する（v0.1 で 4 つとも実装済み）。
+- 初期段階では Maven Central と PyPI（詳細評価の対象言語）から始め、Go Module Proxy と RubyGems を順次追加する（v0.1 で 4 つとも実装済み）。Rust 対応に合わせて crates.io も追加した。
 - Maven Central の `-sources.jar` には Java と Kotlin のソースが混在し得るため、拡張子（`.java` / `.kt`）で言語を判定する。
 - エコシステムごとの取得処理はプラグイン（アダプタ）として実装し、共通インタフェース `list_updates(since) → [PackageVersion]`、`fetch(PackageVersion) → Archive` を持つ。
 
@@ -203,6 +206,7 @@ getter/setter、`equals`/`hashCode`、定型的な例外処理など、多数の
 
 - ライセンスは、よく使われる表記だけを SPDX 識別子に変換する。変換できない場合は宣言された文字列をそのまま記録する。メタデータに宣言がない場合（Go モジュールなど）は、アーカイブ最上位のライセンスファイルの本文を既知の文言と照らして判定する（Apache-2.0, MIT, BSD-2/3-Clause, ISC, MPL-2.0, GPL/LGPL, Unlicense）。
 - Go module zip の各エントリは `<module>@<version>/` で始まるため、モジュールパスの要素数だけ先頭を取り除く。
+- crates.io: バージョン・チェックサム（SHA-256）・ライセンス（SPDX 式。旧形式の `/` は `OR` に読み替える）・公開日時・リポジトリ URL は API（`/api/v1/crates/<name>`、バージョン指定時は `/api/v1/crates/<name>/<version>`）から、アーカイブは static.crates.io から取得する。`.crate` は `<name>-<version>/` で始まる tar.gz なので先頭 1 要素を取り除く。上位 N 件は API の累計ダウンロード数順（`sort=downloads`）。[データアクセスポリシー](https://crates.io/data-access) に従い、API は 1 秒に 1 リクエストまでとし、`--contact` の指定を促す（未指定なら警告する）。
 - 上限: アーカイブ 512MB、展開後のソース合計 1GB、1 エントリ 8MB（超えるエントリは生成コードの可能性が高いため読み飛ばす）。
 - HTTP: 直列に取得し、リクエストの間隔を空ける（既定 1 秒）。429・5xx・通信エラーは指数バックオフで最大 4 回まで試す。
 - 取得状況は `package_version.status`（`indexed` / `failed`）と `error` に記録する。既定では `indexed` のバージョンを再取得しない（`--force` で再索引）。
@@ -302,7 +306,7 @@ meta            (normalizer_version, k, w, n, b, r, created_at, ...)
 
 ```yaml
 version: 1
-languages: [go, java, kotlin, python, ruby]
+languages: [go, java, kotlin, python, ruby, rust]
 min_tokens: 50
 threshold: 0.7
 max_candidates: 5
@@ -374,7 +378,7 @@ pelicode eval    --dataset ./bench --db bench.db        # 評価実験
 | 項目 | 選択肢・論点 |
 | --- | --- |
 | 実装言語 | Rust（Tree-sitter バインディング、単一バイナリ配布、性能）を第一候補。研究用スクリプトは Python 併用も可。 |
-| 初期対象言語 | Go, Java, Kotlin, Python, Ruby に決定。詳細評価は Java + Python を中心とする。 |
+| 初期対象言語 | Go, Java, Kotlin, Python, Ruby に決定（その後 Rust を追加）。詳細評価は Java + Python を中心とする。 |
 | 初期対象エコシステム | Maven Central + PyPI から開始し、Go Module Proxy、RubyGems を追加する。 |
 | Kotlin 文法 | コミュニティ製文法のうちどれを採用するか（保守状況・Rust バインディングの有無で選ぶ）。 |
 | 正規化の既定レベル | 評価実験の結果で決定する。 |

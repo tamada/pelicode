@@ -4,7 +4,7 @@ English | [日本語](README.ja.md)
 
 pelicode extracts structural features of code at the function level (hashes based on the AST) and compares them with the code of published packages to find **similar code that should be reviewed**.
 
-Just as dependabot checks dependency versions against external repositories, pelicode checks the functions in your commits and pull requests against code published on repositories such as PyPI and Maven Central. It helps you notice code from elsewhere that may have slipped in without the developers knowing, for example through AI-generated code or pull requests from outside contributors.
+Just as dependabot checks dependency versions against external repositories, pelicode checks the functions in your commits and pull requests against code published on repositories such as PyPI, Maven Central and crates.io. It helps you notice code from elsewhere that may have slipped in without the developers knowing, for example through AI-generated code or pull requests from outside contributors.
 
 > [!IMPORTANT]
 > pelicode does **not** decide whether code is plagiarized or violates a license. It shows "similar code candidates to review", together with their sources and licenses. Whether code was reused, and whether that raises a license issue, is for a person to check and decide.
@@ -15,7 +15,7 @@ This is a research prototype (v0.1). The design is described in the [specificati
 
 ```mermaid
 flowchart LR
-    R[("PyPI / Maven Central<br/>Go proxy / RubyGems")] -->|pelicode crawl| I
+    R[("PyPI / Maven Central / crates.io<br/>Go proxy / RubyGems")] -->|pelicode crawl| I
     P["Local projects"] -->|pelicode index| I
     I["Extract, normalize and<br/>hash functions"] --> D[("SQLite DB")]
     D -->|pelicode stats --refresh| D
@@ -45,6 +45,7 @@ The database never stores source code. It stores only hashes, locations (lines a
 | Kotlin | `.kt`, `.kts` | tree-sitter-kotlin-ng (community-maintained) |
 | Python | `.py` | tree-sitter-python |
 | Ruby | `.rb` | tree-sitter-ruby |
+| Rust | `.rs` | tree-sitter-rust |
 
 | Repository | What is fetched | Integrity check |
 | --- | --- | --- |
@@ -52,6 +53,7 @@ The database never stores source code. It stores only hashes, locations (lines a
 | Maven Central | `-sources.jar` (Java and Kotlin) | SHA-1 |
 | Go | module zip | `h1:` hash from sum.golang.org |
 | RubyGems | `.gem` | SHA-256 |
+| crates.io | `.crate` | SHA-256 |
 
 ## Installation
 
@@ -109,10 +111,11 @@ Every command that uses a database takes `--db <FILE>` (default: `pelicode.db`).
 
 ```bash
 pelicode crawl pypi requests numpy@2.1.0         # NAME[@VERSION]
-pelicode crawl pypi --top 100                    # the 100 most downloaded packages (PyPI only)
+pelicode crawl pypi --top 100                    # the 100 most downloaded packages (PyPI and crates.io only)
 pelicode crawl maven com.google.code.gson:gson:2.11.0
 pelicode crawl go golang.org/x/mod@v0.20.0
 pelicode crawl rubygems thor@1.3.0
+pelicode crawl crates uuid serde_json@1.0.140 --contact https://example.org/about
 pelicode crawl maven --list packages.txt         # one package per line; '#' starts a comment
 ```
 
@@ -121,7 +124,8 @@ pelicode crawl maven --list packages.txt         # one package per line; '#' sta
 - Archives are read in memory and discarded; nothing is unpacked to disk.
 - Requests are sent one at a time, by default at least one second apart (`--delay-ms`). When crawling many packages, put a contact URL or e-mail address in the User-Agent with `--contact`.
 - Failures are recorded in the database. If any package fails, the exit status is 1.
-- The download ranking used by `--top` is not an official PyPI service but [hugovk/top-pypi-packages](https://github.com/hugovk/top-pypi-packages).
+- For PyPI, the download ranking used by `--top` is not an official PyPI service but [hugovk/top-pypi-packages](https://github.com/hugovk/top-pypi-packages). For crates.io, it is the all-time download count of crates.io.
+- The [crates.io data access policy](https://crates.io/data-access) allows at most one API request per second and strongly suggests a way to contact you; give `--contact` and keep `--delay-ms` at 1000 or more when crawling crates.io.
 
 ### index: registering a local project
 
@@ -195,7 +199,7 @@ The database records the parameters it was built with, and adding to it with dif
 | [core](core) | pelicode-core | Parsing, function extraction, normalization, hashes, fingerprints, MinHash |
 | [db](db) | pelicode-db | SQLite storage, lookups and hash counts |
 | [detect](detect) | pelicode-detect | Search for similar code candidates |
-| [crawl](crawl) | pelicode-crawl | Fetching from PyPI, Maven Central, Go and RubyGems |
+| [crawl](crawl) | pelicode-crawl | Fetching from PyPI, Maven Central, Go, RubyGems and crates.io |
 | [cli](cli) | pelicode-cli | The `pelicode` command |
 
 ```bash

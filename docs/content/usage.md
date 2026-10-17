@@ -15,7 +15,7 @@ draft: false
 pelicode <COMMAND> [OPTIONS]
 
 Commands:
-  crawl      Fetches packages from a public repository (pypi, maven, go, rubygems) and indexes them
+  crawl      Fetches packages from a public repository (pypi, maven, go, rubygems, crates) and indexes them
   index      Extracts the functions of every supported source file under the given directories and stores their features in the database
   stats      Shows database statistics and the hashes shared by the most packages
   scan       Reports stored functions similar to the functions of the given code
@@ -52,13 +52,14 @@ pelicode crawl [OPTIONS] <ECOSYSTEM> [PACKAGES]...
 | `maven` | `GROUP:ARTIFACT[:VERSION]` | `com.google.code.gson:gson:2.11.0` |
 | `go` | `MODULE[@VERSION]` | `golang.org/x/mod@v0.20.0` |
 | `rubygems` | `NAME[@VERSION]` | `thor@1.3.0` |
+| `crates` | `NAME[@VERSION]` | `uuid`, `serde_json@1.0.140` |
 
 Without a version, the latest release is fetched.
 
 | Option | Default | Description |
 | --- | --- | --- |
 | `--list <FILE>` | | Read packages from a file, one per line. `#` starts a comment |
-| `--top <N>` | | Also crawl the N most downloaded packages (`pypi` only) |
+| `--top <N>` | | Also crawl the N most downloaded packages (`pypi` and `crates` only) |
 | `--force` | | Re-index versions that are already in the database |
 | `--refresh-stats` | | Recount common hashes afterwards (see [`stats`](#stats)) |
 | `--delay-ms <MS>` | 1000 | Minimum interval between two requests |
@@ -72,6 +73,7 @@ pelicode crawl pypi --top 100 --contact https://example.org/about
 pelicode crawl maven --list maven-packages.txt --refresh-stats
 pelicode crawl go github.com/google/uuid
 pelicode crawl rubygems rack thor@1.3.0
+pelicode crawl crates --top 100 --contact https://example.org/about
 ```
 
 What is fetched from each repository:
@@ -82,6 +84,7 @@ What is fetched from each repository:
 | Maven Central | `-sources.jar` (Java and Kotlin files) | `.sha1` file | `<licenses>` of the POM or of its parents |
 | Go | Module zip from proxy.golang.org | `h1:` hash from sum.golang.org | Text of the `LICENSE` file |
 | RubyGems | `.gem` file | SHA-256 published by RubyGems | `licenses` of the gem |
+| crates.io | `.crate` file from static.crates.io | SHA-256 checksum published by crates.io | `license` of the version (SPDX) |
 
 Good to know:
 
@@ -89,7 +92,8 @@ Good to know:
 - Versions already indexed are skipped, so an interrupted crawl can simply be run again.
 - A failed package does not stop the others. Failures are recorded in the database, and the exit status is 1 if any package failed.
 - Requests are sent one at a time. Be gentle with public services: keep the delay, and set `--contact` when crawling many packages.
-- The ranking used by `--top` comes from [hugovk/top-pypi-packages](https://github.com/hugovk/top-pypi-packages), not from PyPI itself. Maven Central, the Go module proxy and RubyGems have no such ranking; use `--list` for them.
+- For PyPI, the ranking used by `--top` comes from [hugovk/top-pypi-packages](https://github.com/hugovk/top-pypi-packages), not from PyPI itself; for crates.io, it is the all-time download count of crates.io. Maven Central, the Go module proxy and RubyGems have no such ranking; use `--list` for them.
+- The [crates.io data access policy](https://crates.io/data-access) allows at most one API request per second and strongly suggests a way to contact you. Give `--contact` when crawling crates.io, and keep `--delay-ms` at 1000 or more.
 
 ### `index`
 
@@ -230,6 +234,7 @@ java     java
 kotlin   kt, kts
 python   py
 ruby     rb
+rust     rs
 ```
 
 ---

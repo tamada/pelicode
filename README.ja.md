@@ -15,7 +15,7 @@ dependabot が依存ライブラリのバージョンを外部リポジトリと
 
 ```mermaid
 flowchart LR
-    R[("PyPI / Maven Central<br/>Go proxy / RubyGems")] -->|pelicode crawl| I
+    R[("PyPI / Maven Central / crates.io<br/>Go proxy / RubyGems")] -->|pelicode crawl| I
     P["手元のプロジェクト"] -->|pelicode index| I
     I["関数の抽出・正規化・ハッシュ化"] --> D[("SQLite DB")]
     D -->|pelicode stats --refresh| D
@@ -45,6 +45,7 @@ flowchart LR
 | Kotlin | `.kt`, `.kts` | tree-sitter-kotlin-ng（コミュニティ製） |
 | Python | `.py` | tree-sitter-python |
 | Ruby | `.rb` | tree-sitter-ruby |
+| Rust | `.rs` | tree-sitter-rust |
 
 | エコシステム | 取得するもの | 改ざん検査 |
 | --- | --- | --- |
@@ -52,6 +53,7 @@ flowchart LR
 | Maven Central | `-sources.jar`（Java と Kotlin） | SHA-1 |
 | Go | モジュールの zip | sum.golang.org の `h1:` ハッシュ |
 | RubyGems | `.gem` | SHA-256 |
+| crates.io | `.crate` | SHA-256 |
 
 ## インストール
 
@@ -109,10 +111,11 @@ hex.go:10-44 parseID (tokens=275)
 
 ```bash
 pelicode crawl pypi requests numpy@2.1.0         # NAME[@VERSION]
-pelicode crawl pypi --top 100                    # ダウンロード数の上位 100 件（PyPI のみ）
+pelicode crawl pypi --top 100                    # ダウンロード数の上位 100 件（PyPI と crates.io のみ）
 pelicode crawl maven com.google.code.gson:gson:2.11.0
 pelicode crawl go golang.org/x/mod@v0.20.0
 pelicode crawl rubygems thor@1.3.0
+pelicode crawl crates uuid serde_json@1.0.140 --contact https://example.org/about
 pelicode crawl maven --list packages.txt         # 1行に1パッケージ（# 以降はコメント）
 ```
 
@@ -121,7 +124,8 @@ pelicode crawl maven --list packages.txt         # 1行に1パッケージ（# �
 - アーカイブはディスクに展開せず、メモリ上で読んで捨てます。
 - リクエストは1件ずつ、既定で1秒の間隔を空けて送ります（`--delay-ms`）。大量に取得するときは、`--contact` で連絡先（URL かメールアドレス）を User-Agent に入れてください。
 - 失敗したパッケージは DB に記録されます。1件でも失敗すると終了コードは 1 です。
-- `--top` が使うダウンロード数のランキングは、PyPI 公式ではなく第三者の [hugovk/top-pypi-packages](https://github.com/hugovk/top-pypi-packages) です。
+- PyPI の `--top` が使うダウンロード数のランキングは、PyPI 公式ではなく第三者の [hugovk/top-pypi-packages](https://github.com/hugovk/top-pypi-packages) です。crates.io では、crates.io 自身の累計ダウンロード数を使います。
+- [crates.io のデータアクセスポリシー](https://crates.io/data-access)は、API へのリクエストを1秒に1回までとし、連絡先の明示を強く推奨しています。crates.io から取得するときは `--contact` を付け、`--delay-ms` は 1000 以上にしてください。
 
 ### index: 手元のプロジェクトの登録
 
@@ -195,7 +199,7 @@ DB には作成時のパラメータが記録されます。異なるパラメ�
 | [core](core) | pelicode-core | 構文解析、関数抽出、正規化、ハッシュ・フィンガープリント・MinHash |
 | [db](db) | pelicode-db | SQLite への保存、検索用の問い合わせ、ハッシュの集計 |
 | [detect](detect) | pelicode-detect | 類似候補の検索 |
-| [crawl](crawl) | pelicode-crawl | PyPI・Maven Central・Go・RubyGems からの取得 |
+| [crawl](crawl) | pelicode-crawl | PyPI・Maven Central・Go・RubyGems・crates.io からの取得 |
 | [cli](cli) | pelicode-cli | `pelicode` コマンド |
 
 ```bash

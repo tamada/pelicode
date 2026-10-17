@@ -15,11 +15,11 @@ The terms below are the ones the commands, their `--help` and this site use. The
 
 ### Ecosystem
 
-A public package repository: `pypi`, `maven` (Maven Central), `go` (the Go module proxy) or `rubygems`. Projects registered with `pelicode index` belong to the ecosystem `local` unless another one is given.
+A public package repository: `pypi`, `maven` (Maven Central), `go` (the Go module proxy), `rubygems` or `crates` (crates.io). Projects registered with `pelicode index` belong to the ecosystem `local` unless another one is given.
 
 ### Package
 
-A named unit of an ecosystem: a PyPI project, a Maven `groupId:artifactId`, a Go module path or a gem. Hash counts are per package, so the versions of one package count once.
+A named unit of an ecosystem: a PyPI project, a Maven `groupId:artifactId`, a Go module path, a gem or a crate. Hash counts are per package, so the versions of one package count once.
 
 ### Version
 

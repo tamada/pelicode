@@ -5,22 +5,22 @@ use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 use clap::Args;
-use pelicode_crawl::{Client, Crawler, Ecosystem, Outcome, pypi};
+use pelicode_crawl::{Client, Crawler, Ecosystem, Outcome, crates, pypi};
 use pelicode_db::Database;
 
 use crate::FeatureArgs;
 
 #[derive(Args)]
 pub struct CrawlArgs {
-    /// Repository to crawl: pypi, maven, go or rubygems.
+    /// Repository to crawl: pypi, maven, go, rubygems or crates.
     ecosystem: Ecosystem,
-    /// Packages: NAME[@VERSION] for pypi and rubygems, GROUP:ARTIFACT[:VERSION] for maven,
-    /// MODULE[@VERSION] for go.
+    /// Packages: NAME[@VERSION] for pypi, rubygems and crates, GROUP:ARTIFACT[:VERSION] for
+    /// maven, MODULE[@VERSION] for go.
     packages: Vec<String>,
     /// File listing packages, one per line (`#` starts a comment).
     #[arg(long)]
     list: Option<PathBuf>,
-    /// Also crawl the N most downloaded packages (pypi only).
+    /// Also crawl the N most downloaded packages (pypi and crates only).
     #[arg(long, value_name = "N")]
     top: Option<usize>,
     /// Database file.
@@ -62,11 +62,21 @@ pub fn run(args: CrawlArgs) -> Result<bool> {
         );
     }
     if let Some(n) = args.top {
-        if args.ecosystem != Ecosystem::PyPI {
-            bail!("--top is available for pypi only");
+        match args.ecosystem {
+            Ecosystem::PyPI => packages.extend(pypi::top_packages(&client, n)?),
+            Ecosystem::Crates => packages.extend(crates::top_packages(&client, n)?),
+            _ => bail!("--top is available for pypi and crates only"),
         }
-        packages.extend(pypi::top_packages(&client, n)?);
     }
+    if args.ecosystem == Ecosystem::Crates && args.contact.is_none() {
+        eprintln!(
+            "warning: the crates.io data access policy strongly suggests a way to contact \
+             the crawler's operator; please set --contact"
+        );
+    }
+    // The same package may come from the arguments, --list and --top.
+    let mut seen = std::collections::HashSet::new();
+    packages.retain(|p| seen.insert(p.clone()));
     if packages.is_empty() {
         bail!("give packages, --list FILE or --top N");
     }

@@ -2,6 +2,7 @@
 //! their functions (spec §5).
 
 pub mod archive;
+pub mod crates;
 pub mod go;
 pub mod http;
 pub mod license;
@@ -50,6 +51,7 @@ pub enum Ecosystem {
     Maven,
     Go,
     RubyGems,
+    Crates,
 }
 
 impl Ecosystem {
@@ -59,6 +61,7 @@ impl Ecosystem {
             Ecosystem::Maven => maven::ECOSYSTEM,
             Ecosystem::Go => go::ECOSYSTEM,
             Ecosystem::RubyGems => rubygems::ECOSYSTEM,
+            Ecosystem::Crates => crates::ECOSYSTEM,
         }
     }
 }
@@ -78,6 +81,7 @@ impl FromStr for Ecosystem {
             "maven" => Ok(Ecosystem::Maven),
             "go" => Ok(Ecosystem::Go),
             "rubygems" | "gem" => Ok(Ecosystem::RubyGems),
+            "crates" | "crates.io" | "cargo" => Ok(Ecosystem::Crates),
             _ => Err(Error::InvalidPackage(format!("unknown ecosystem: {s}"))),
         }
     }
@@ -183,6 +187,7 @@ impl Crawler {
             }
             Ecosystem::Go => go::resolve(&self.client, name, version),
             Ecosystem::RubyGems => rubygems::resolve(&self.client, name, version),
+            Ecosystem::Crates => crates::resolve(&self.client, name, version),
         }
     }
 

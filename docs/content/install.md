@@ -85,7 +85,7 @@ The repository is a Cargo workspace of five crates:
 | `core` | pelicode-core | Parsing, function extraction, normalization, hashes, fingerprints, MinHash |
 | `db` | pelicode-db | SQLite storage, lookups and hash counts |
 | `detect` | pelicode-detect | Search for similar code candidates |
-| `crawl` | pelicode-crawl | Fetching from PyPI, Maven Central, the Go module proxy and RubyGems |
+| `crawl` | pelicode-crawl | Fetching from PyPI, Maven Central, the Go module proxy, RubyGems and crates.io |
 | `cli` | pelicode-cli | The `pelicode` command |
 
 ---
@@ -105,6 +105,7 @@ java     java
 kotlin   kt, kts
 python   py
 ruby     rb
+rust     rs
 ```
 
 Next, follow [🚀 Getting Started](/getting-started) to build a small database and check some code against it.
