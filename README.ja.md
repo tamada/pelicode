@@ -57,13 +57,21 @@ flowchart LR
 
 ## インストール
 
-Rust 1.90 以降が必要です。
+Homebrew、Cargo、Docker、ソースからの4通りがあります（Cargo とソースからの場合は Rust 1.90 以降が必要です）。
+
+```bash
+brew install tamada/tap/pelicode
+cargo install pelicode-cli
+docker run --rm -v "$PWD":/workdir quay.io/tama5/pelicode --help
+```
+
+Homebrew の Formula、crates.io の crate、コンテナイメージは、最初のリリースと一緒に公開します。それまではソースからビルドしてください。
 
 ```bash
 cargo install --path cli
 ```
 
-`pelicode` コマンドが `~/.cargo/bin` に入ります。インストールせずに試す場合は、`pelicode` の代わりに `cargo run --release --` を使ってください。
+`pelicode` コマンドが `~/.cargo/bin` に入ります。インストールせずに試す場合は、`pelicode` の代わりに `cargo run --release --` を使ってください。詳しくは[インストールガイド](https://tamada.github.io/pelicode/install/)（英語）を見てください。
 
 ## クイックスタート
 
@@ -205,6 +213,7 @@ DB には作成時のパラメータが記録されます。異なるパラメ�
 ```bash
 cargo test       # テスト（ネットワークには接続しません）
 cargo clippy --all-targets
+just --list      # CI が実行するタスクの一覧（https://just.systems/ を使います）
 ```
 
 ## 未実装のもの

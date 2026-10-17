@@ -57,13 +57,21 @@ The database never stores source code. It stores only hashes, locations (lines a
 
 ## Installation
 
-Rust 1.90 or later is required.
+With Homebrew, Cargo, Docker, or from source (Rust 1.90 or later is required for Cargo and the source):
+
+```bash
+brew install tamada/tap/pelicode
+cargo install pelicode-cli
+docker run --rm -v "$PWD":/workdir quay.io/tama5/pelicode --help
+```
+
+The Homebrew formula, the crates and the container image are published with the first release. Until then, build from source:
 
 ```bash
 cargo install --path cli
 ```
 
-This installs the `pelicode` command into `~/.cargo/bin`. To try it without installing, use `cargo run --release --` in place of `pelicode`.
+This installs the `pelicode` command into `~/.cargo/bin`. To try it without installing, use `cargo run --release --` in place of `pelicode`. See the [installation guide](https://tamada.github.io/pelicode/install/) for details.
 
 ## Quick start
 
@@ -205,6 +213,7 @@ The database records the parameters it was built with, and adding to it with dif
 ```bash
 cargo test       # tests (no network access)
 cargo clippy --all-targets
+just --list      # the tasks CI runs (with https://just.systems/)
 ```
 
 ## Not implemented yet
