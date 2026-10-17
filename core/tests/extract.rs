@@ -159,3 +159,50 @@ fn functions_with_syntax_errors_are_skipped() {
     let names: Vec<_> = functions.iter().map(|f| f.name.as_str()).collect();
     assert_eq!(names, ["ok"]);
 }
+
+#[test]
+fn rust_functions_and_closures() {
+    let a = r#"
+impl Stack {
+    /// Pops the top item.
+    pub fn pop(&mut self) -> Option<i32> {
+        let n = self.items.len();
+        if n == 0 { return None; }
+        self.items.iter().map(|x| x * 2).last()
+    }
+}
+"#;
+    let b = r#"
+impl Queue {
+    pub fn take(&mut self) -> Option<i32> {
+        // renamed and reformatted
+        let len = self.data.len();
+        if len == 0 {
+            return None;
+        }
+        self.data.iter().map(|v| v * 3).last()
+    }
+}
+"#;
+    let fa = extract_source(Language::Rust, a.as_bytes(), &config()).unwrap();
+    let fb = extract_source(Language::Rust, b.as_bytes(), &config()).unwrap();
+    let names: Vec<_> = fa.iter().map(|f| f.name.as_str()).collect();
+    assert_eq!(names, ["pop", "<anonymous>"]);
+    assert_eq!(fa[1].parent, Some(0));
+    assert_ne!(
+        fa[0].exact_hashes[&Level::N0],
+        fb[0].exact_hashes[&Level::N0]
+    );
+    assert_eq!(
+        fa[0].exact_hashes[&Level::N1],
+        fb[0].exact_hashes[&Level::N1]
+    );
+}
+
+#[test]
+fn rust_trait_signatures_are_not_functions() {
+    let src = "trait T { fn f(&self) -> u32; fn g(&self) -> u32 { 1 } }";
+    let functions = extract_source(Language::Rust, src.as_bytes(), &config()).unwrap();
+    let names: Vec<_> = functions.iter().map(|f| f.name.as_str()).collect();
+    assert_eq!(names, ["g"]);
+}

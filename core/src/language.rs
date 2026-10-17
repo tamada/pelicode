@@ -15,15 +15,17 @@ pub enum Language {
     Kotlin,
     Python,
     Ruby,
+    Rust,
 }
 
 impl Language {
-    pub const ALL: [Language; 5] = [
+    pub const ALL: [Language; 6] = [
         Language::Go,
         Language::Java,
         Language::Kotlin,
         Language::Python,
         Language::Ruby,
+        Language::Rust,
     ];
 
     pub fn name(self) -> &'static str {
@@ -33,6 +35,7 @@ impl Language {
             Language::Kotlin => "kotlin",
             Language::Python => "python",
             Language::Ruby => "ruby",
+            Language::Rust => "rust",
         }
     }
 
@@ -43,6 +46,7 @@ impl Language {
             Language::Kotlin => &["kt", "kts"],
             Language::Python => &["py"],
             Language::Ruby => &["rb"],
+            Language::Rust => &["rs"],
         }
     }
 
@@ -65,6 +69,7 @@ impl Language {
             Language::Kotlin => tree_sitter_kotlin_ng::LANGUAGE.into(),
             Language::Python => tree_sitter_python::LANGUAGE.into(),
             Language::Ruby => tree_sitter_ruby::LANGUAGE.into(),
+            Language::Rust => tree_sitter_rust::LANGUAGE.into(),
         }
     }
 
@@ -75,6 +80,7 @@ impl Language {
             Language::Kotlin => &KOTLIN,
             Language::Python => &PYTHON,
             Language::Ruby => &RUBY,
+            Language::Rust => &RUST,
         }
     }
 }
@@ -220,6 +226,24 @@ static RUBY: LanguageSpec = LanguageSpec {
     optional_semicolons: true,
 };
 
+static RUST: LanguageSpec = LanguageSpec {
+    // Trait methods without a body (`function_signature_item`) are not functions.
+    functions: &["function_item", "closure_expression"],
+    comments: &["line_comment", "block_comment"],
+    identifiers: &[
+        "identifier",
+        "field_identifier",
+        "shorthand_field_identifier",
+    ],
+    type_identifiers: &["type_identifier"],
+    type_contexts: &[],
+    strings: &["string_literal", "raw_string_literal", "char_literal"],
+    numbers: &["integer_literal", "float_literal"],
+    docstrings: false,
+    // `;` turns an expression into a statement, so it is structure.
+    optional_semicolons: false,
+};
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -234,7 +258,8 @@ mod tests {
             Language::from_path(Path::new("x.py")),
             Some(Language::Python)
         );
-        assert_eq!(Language::from_path(Path::new("x.rs")), None);
+        assert_eq!(Language::from_path(Path::new("x.rs")), Some(Language::Rust));
+        assert_eq!(Language::from_path(Path::new("x.c")), None);
     }
 
     #[test]
