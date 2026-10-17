@@ -4,6 +4,12 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+description = "Function extraction, normalization and fingerprinting of source code with Tree-sitter, for pelicode"
+keywords = ["code-clone", "fingerprint", "tree-sitter", "winnowing", "minhash"]
+categories = ["development-tools", "parser-implementations"]
 
 [dependencies]
 blake3 = "1.8.7"

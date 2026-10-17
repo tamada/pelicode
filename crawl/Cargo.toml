@@ -4,14 +4,20 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+description = "Crawler fetching package sources from PyPI, Maven Central, the Go module proxy, RubyGems and crates.io, for pelicode"
+keywords = ["crawler", "pypi", "maven", "crates-io", "rubygems"]
+categories = ["development-tools"]
 
 [dependencies]
 base64 = "0.23.1"
 flate2 = "1.1.10"
 httpdate = "1.0.3"
 humantime = "2.4.0"
-pelicode-core = { version = "0.1.0", path = "../core" }
-pelicode-db = { version = "0.1.0", path = "../db" }
+pelicode-core.workspace = true
+pelicode-db.workspace = true
 rayon = "1.12.0"
 roxmltree = "0.21.1"
 serde = { version = "1.0.229", features = ["derive"] }

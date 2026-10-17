@@ -4,9 +4,15 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+description = "SQLite storage of function fingerprints and provenance for pelicode"
+keywords = ["code-clone", "fingerprint", "sqlite"]
+categories = ["development-tools"]
 
 [dependencies]
-pelicode-core = { version = "0.1.0", path = "../core" }
+pelicode-core.workspace = true
 rusqlite = { version = "0.40.2", features = ["bundled"] }
 serde = { version = "1.0.229", features = ["derive"] }
 thiserror = "2.0.21"

@@ -4,10 +4,16 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+description = "Search for functions similar to known open-source code, for pelicode"
+keywords = ["code-clone", "fingerprint", "similarity"]
+categories = ["development-tools"]
 
 [dependencies]
-pelicode-core = { version = "0.1.0", path = "../core" }
-pelicode-db = { version = "0.1.0", path = "../db" }
+pelicode-core.workspace = true
+pelicode-db.workspace = true
 serde = { version = "1.0.229", features = ["derive"] }
 thiserror = "2.0.21"
 
