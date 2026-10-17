@@ -1,0 +1,11 @@
+[workspace]
+resolver = "3"
+members = ["core", "db", "cli"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+
+[workspace.dependencies]
+pelicode-core = { path = "core" }
+pelicode-db = { path = "db" }

@@ -1,0 +1,631 @@
+//! SQLite storage of function features (spec §6).
+
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::path::Path;
+
+use pelicode_core::{Config, FileFeatures, Level, NORMALIZER_VERSION};
+use rusqlite::{Connection, OptionalExtension, Transaction, params};
+use serde::Serialize;
+
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error(transparent)]
+    Sqlite(#[from] rusqlite::Error),
+    #[error("database was built with {key} = {stored}, but the current setting is {current}")]
+    Incompatible {
+        key: String,
+        stored: String,
+        current: String,
+    },
+}
+
+pub type Result<T> = std::result::Result<T, Error>;
+
+/// Version of the table layout; databases with another version are rejected.
+pub const SCHEMA_VERSION: u32 = 2;
+
+const SCHEMA: &str = r#"
+CREATE TABLE IF NOT EXISTS meta (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS ecosystem (
+    id   INTEGER PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE
+);
+CREATE TABLE IF NOT EXISTS package (
+    id             INTEGER PRIMARY KEY,
+    ecosystem_id   INTEGER NOT NULL REFERENCES ecosystem(id),
+    name           TEXT NOT NULL,
+    repository_url TEXT,
+    UNIQUE (ecosystem_id, name)
+);
+CREATE TABLE IF NOT EXISTS package_version (
+    id             INTEGER PRIMARY KEY,
+    package_id     INTEGER NOT NULL REFERENCES package(id),
+    version        TEXT NOT NULL,
+    published_at   TEXT,
+    license_spdx   TEXT,
+    archive_url    TEXT,
+    archive_sha256 TEXT,
+    crawled_at     TEXT,
+    status         TEXT NOT NULL,
+    UNIQUE (package_id, version)
+);
+CREATE TABLE IF NOT EXISTS source_file (
+    id             INTEGER PRIMARY KEY,
+    content_sha256 TEXT NOT NULL UNIQUE,
+    language       TEXT NOT NULL,
+    function_count INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS version_file (
+    package_version_id INTEGER NOT NULL REFERENCES package_version(id),
+    source_file_id     INTEGER NOT NULL REFERENCES source_file(id),
+    path               TEXT NOT NULL,
+    PRIMARY KEY (package_version_id, path)
+);
+CREATE INDEX IF NOT EXISTS version_file_source ON version_file(source_file_id);
+CREATE TABLE IF NOT EXISTS function (
+    id                 INTEGER PRIMARY KEY,
+    source_file_id     INTEGER NOT NULL REFERENCES source_file(id),
+    parent_function_id INTEGER REFERENCES function(id),
+    name               TEXT NOT NULL,
+    kind               TEXT NOT NULL,
+    start_line         INTEGER NOT NULL,
+    end_line           INTEGER NOT NULL,
+    start_column       INTEGER NOT NULL,
+    end_column         INTEGER NOT NULL,
+    start_byte         INTEGER NOT NULL,
+    end_byte           INTEGER NOT NULL,
+    token_count        INTEGER NOT NULL,
+    node_count         INTEGER NOT NULL,
+    depth              INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS function_source ON function(source_file_id);
+CREATE TABLE IF NOT EXISTS exact_hash (
+    function_id INTEGER NOT NULL REFERENCES function(id),
+    level       INTEGER NOT NULL,
+    hash        BLOB NOT NULL,
+    PRIMARY KEY (function_id, level)
+);
+CREATE INDEX IF NOT EXISTS exact_hash_lookup ON exact_hash(level, hash);
+CREATE TABLE IF NOT EXISTS fingerprint (
+    function_id INTEGER NOT NULL REFERENCES function(id),
+    level       INTEGER NOT NULL,
+    hash        INTEGER NOT NULL,
+    position    INTEGER NOT NULL,
+    start_line  INTEGER NOT NULL,
+    end_line    INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS fingerprint_lookup ON fingerprint(level, hash);
+CREATE TABLE IF NOT EXISTS minhash (
+    function_id INTEGER NOT NULL REFERENCES function(id),
+    level       INTEGER NOT NULL,
+    signature   BLOB NOT NULL,
+    PRIMARY KEY (function_id, level)
+);
+CREATE TABLE IF NOT EXISTS lsh_bucket (
+    level       INTEGER NOT NULL,
+    band        INTEGER NOT NULL,
+    bucket_hash INTEGER NOT NULL,
+    function_id INTEGER NOT NULL REFERENCES function(id)
+);
+CREATE INDEX IF NOT EXISTS lsh_bucket_lookup ON lsh_bucket(level, band, bucket_hash);
+CREATE TABLE IF NOT EXISTS hash_stats (
+    level          INTEGER NOT NULL,
+    hash           BLOB NOT NULL,
+    kind           TEXT NOT NULL,
+    package_count  INTEGER NOT NULL,
+    function_count INTEGER NOT NULL,
+    PRIMARY KEY (level, hash, kind)
+);
+"#;
+
+/// Where indexed source files come from.
+#[derive(Debug, Clone, Default)]
+pub struct PackageInfo {
+    pub ecosystem: String,
+    pub name: String,
+    pub version: String,
+    pub license_spdx: Option<String>,
+    pub repository_url: Option<String>,
+    pub published_at: Option<String>,
+    pub archive_url: Option<String>,
+    pub archive_sha256: Option<String>,
+}
+
+/// Result of [`Database::index`].
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct IndexSummary {
+    pub files: usize,
+    /// Files whose content was not in the database yet.
+    pub new_files: usize,
+    /// Functions stored from new files.
+    pub functions: usize,
+    /// Of `functions`, those with fingerprints.
+    pub indexed_functions: usize,
+}
+
+/// Number of rows of the main tables.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct Stats {
+    pub ecosystems: usize,
+    pub packages: usize,
+    pub versions: usize,
+    pub source_files: usize,
+    pub functions: usize,
+    pub indexed_functions: usize,
+}
+
+/// One occurrence of a stored function, for export.
+#[derive(Debug, Clone, Serialize)]
+pub struct FunctionRow {
+    pub id: i64,
+    pub ecosystem: String,
+    pub package: String,
+    pub version: String,
+    pub license: Option<String>,
+    pub path: String,
+    pub language: String,
+    pub name: String,
+    pub kind: String,
+    pub start_line: usize,
+    pub end_line: usize,
+    pub start_column: usize,
+    pub end_column: usize,
+    pub start_byte: usize,
+    pub end_byte: usize,
+    pub parent_id: Option<i64>,
+    pub token_count: usize,
+    pub node_count: usize,
+    pub depth: usize,
+    pub indexed: bool,
+    pub exact_hashes: BTreeMap<Level, String>,
+}
+
+pub struct Database {
+    conn: Connection,
+}
+
+impl Database {
+    /// Opens (or creates) a database for features computed with `config`.
+    /// Fails when the database was built with incompatible parameters.
+    pub fn open(path: impl AsRef<Path>, config: &Config) -> Result<Database> {
+        let db = Database::open_unchecked(path)?;
+        db.check_meta(config)?;
+        Ok(db)
+    }
+
+    /// Opens a database without checking its parameters (for reading).
+    pub fn open_unchecked(path: impl AsRef<Path>) -> Result<Database> {
+        let conn = Connection::open(path)?;
+        conn.pragma_update(None, "journal_mode", "WAL")?;
+        conn.pragma_update(None, "foreign_keys", "ON")?;
+        conn.execute_batch(SCHEMA)?;
+        let db = Database { conn };
+        db.check_schema()?;
+        Ok(db)
+    }
+
+    fn check_schema(&self) -> Result<()> {
+        let stored = self.meta()?;
+        match stored.get("schema_version") {
+            Some(v) if *v == SCHEMA_VERSION.to_string() => Ok(()),
+            None if stored.is_empty() => {
+                self.conn.execute(
+                    "INSERT INTO meta (key, value) VALUES ('schema_version', ?1)",
+                    [SCHEMA_VERSION.to_string()],
+                )?;
+                Ok(())
+            }
+            other => Err(Error::Incompatible {
+                key: "schema_version".into(),
+                stored: other.cloned().unwrap_or_else(|| "(none)".into()),
+                current: SCHEMA_VERSION.to_string(),
+            }),
+        }
+    }
+
+    /// The parameters recorded in the database.
+    pub fn meta(&self) -> Result<BTreeMap<String, String>> {
+        let mut stmt = self.conn.prepare("SELECT key, value FROM meta")?;
+        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    fn check_meta(&self, config: &Config) -> Result<()> {
+        let current = [
+            ("normalizer_version", NORMALIZER_VERSION.to_string()),
+            ("ident_mode", config.ident_mode.to_string()),
+            ("kgram", config.kgram.to_string()),
+            ("window", config.window.to_string()),
+            ("minhash_size", config.minhash_size.to_string()),
+            ("bands", config.bands.to_string()),
+        ];
+        let stored = self.meta()?;
+        for (key, value) in &current {
+            match stored.get(*key) {
+                Some(s) if s != value => {
+                    return Err(Error::Incompatible {
+                        key: key.to_string(),
+                        stored: s.clone(),
+                        current: value.clone(),
+                    });
+                }
+                Some(_) => {}
+                None => {
+                    self.conn.execute(
+                        "INSERT INTO meta (key, value) VALUES (?1, ?2)",
+                        params![key, value],
+                    )?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Stores `files` as the content of package version `pkg`, replacing what
+    /// was previously recorded for that version. Files already in the
+    /// database (same content hash) are linked without storing them again.
+    pub fn index(&mut self, pkg: &PackageInfo, files: &[FileFeatures]) -> Result<IndexSummary> {
+        let tx = self.conn.transaction()?;
+        let version_id = upsert_version(&tx, pkg)?;
+        tx.execute(
+            "DELETE FROM version_file WHERE package_version_id = ?1",
+            [version_id],
+        )?;
+
+        let mut summary = IndexSummary {
+            files: files.len(),
+            ..IndexSummary::default()
+        };
+        for file in files {
+            let existing: Option<i64> = tx
+                .query_row(
+                    "SELECT id FROM source_file WHERE content_sha256 = ?1",
+                    [&file.content_sha256],
+                    |r| r.get(0),
+                )
+                .optional()?;
+            let file_id = match existing {
+                Some(id) => id,
+                None => {
+                    summary.new_files += 1;
+                    insert_file(&tx, file, &mut summary)?
+                }
+            };
+            tx.execute(
+                "INSERT OR REPLACE INTO version_file (package_version_id, source_file_id, path)
+                 VALUES (?1, ?2, ?3)",
+                params![version_id, file_id, file.path.to_string_lossy()],
+            )?;
+        }
+        tx.commit()?;
+        Ok(summary)
+    }
+
+    pub fn stats(&self) -> Result<Stats> {
+        let count = |table: &str| -> Result<usize> {
+            let n: i64 =
+                self.conn
+                    .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |r| r.get(0))?;
+            Ok(n as usize)
+        };
+        let indexed: i64 =
+            self.conn
+                .query_row("SELECT COUNT(DISTINCT function_id) FROM minhash", [], |r| {
+                    r.get(0)
+                })?;
+        Ok(Stats {
+            ecosystems: count("ecosystem")?,
+            packages: count("package")?,
+            versions: count("package_version")?,
+            source_files: count("source_file")?,
+            functions: count("function")?,
+            indexed_functions: indexed as usize,
+        })
+    }
+
+    /// Every occurrence of every stored function, ordered by package and location.
+    pub fn functions(&self) -> Result<Vec<FunctionRow>> {
+        let mut hashes: HashMap<i64, BTreeMap<Level, String>> = HashMap::new();
+        let mut stmt = self
+            .conn
+            .prepare("SELECT function_id, level, hash FROM exact_hash")?;
+        let mut rows = stmt.query([])?;
+        while let Some(row) = rows.next()? {
+            let level: u8 = row.get(1)?;
+            let hash: Vec<u8> = row.get(2)?;
+            if let Some(level) = Level::from_u8(level) {
+                hashes
+                    .entry(row.get(0)?)
+                    .or_default()
+                    .insert(level, pelicode_core::hash::to_hex(&hash));
+            }
+        }
+
+        let mut stmt = self
+            .conn
+            .prepare("SELECT DISTINCT function_id FROM minhash")?;
+        let indexed: HashSet<i64> = stmt
+            .query_map([], |r| r.get(0))?
+            .collect::<rusqlite::Result<_>>()?;
+
+        let mut stmt = self.conn.prepare(
+            "SELECT f.id, e.name, p.name, pv.version, pv.license_spdx, vf.path, sf.language,
+                    f.name, f.kind, f.start_line, f.end_line, f.start_column, f.end_column,
+                    f.start_byte, f.end_byte, f.parent_function_id,
+                    f.token_count, f.node_count, f.depth
+             FROM function f
+             JOIN source_file sf ON sf.id = f.source_file_id
+             JOIN version_file vf ON vf.source_file_id = sf.id
+             JOIN package_version pv ON pv.id = vf.package_version_id
+             JOIN package p ON p.id = pv.package_id
+             JOIN ecosystem e ON e.id = p.ecosystem_id
+             ORDER BY e.name, p.name, pv.version, vf.path, f.start_line, f.id",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            let id: i64 = r.get(0)?;
+            Ok(FunctionRow {
+                id,
+                ecosystem: r.get(1)?,
+                package: r.get(2)?,
+                version: r.get(3)?,
+                license: r.get(4)?,
+                path: r.get(5)?,
+                language: r.get(6)?,
+                name: r.get(7)?,
+                kind: r.get(8)?,
+                start_line: r.get::<_, i64>(9)? as usize,
+                end_line: r.get::<_, i64>(10)? as usize,
+                start_column: r.get::<_, i64>(11)? as usize,
+                end_column: r.get::<_, i64>(12)? as usize,
+                start_byte: r.get::<_, i64>(13)? as usize,
+                end_byte: r.get::<_, i64>(14)? as usize,
+                parent_id: r.get(15)?,
+                token_count: r.get::<_, i64>(16)? as usize,
+                node_count: r.get::<_, i64>(17)? as usize,
+                depth: r.get::<_, i64>(18)? as usize,
+                indexed: indexed.contains(&id),
+                exact_hashes: hashes.get(&id).cloned().unwrap_or_default(),
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+}
+
+fn upsert_version(tx: &Transaction<'_>, pkg: &PackageInfo) -> Result<i64> {
+    tx.execute(
+        "INSERT OR IGNORE INTO ecosystem (name) VALUES (?1)",
+        [&pkg.ecosystem],
+    )?;
+    let ecosystem_id: i64 = tx.query_row(
+        "SELECT id FROM ecosystem WHERE name = ?1",
+        [&pkg.ecosystem],
+        |r| r.get(0),
+    )?;
+    let package_id: i64 = tx.query_row(
+        "INSERT INTO package (ecosystem_id, name, repository_url) VALUES (?1, ?2, ?3)
+         ON CONFLICT (ecosystem_id, name)
+         DO UPDATE SET repository_url = COALESCE(excluded.repository_url, repository_url)
+         RETURNING id",
+        params![ecosystem_id, pkg.name, pkg.repository_url],
+        |r| r.get(0),
+    )?;
+    let version_id: i64 = tx.query_row(
+        "INSERT INTO package_version
+             (package_id, version, published_at, license_spdx, archive_url, archive_sha256,
+              crawled_at, status)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), 'indexed')
+         ON CONFLICT (package_id, version) DO UPDATE SET
+             published_at   = COALESCE(excluded.published_at, published_at),
+             license_spdx   = COALESCE(excluded.license_spdx, license_spdx),
+             archive_url    = COALESCE(excluded.archive_url, archive_url),
+             archive_sha256 = COALESCE(excluded.archive_sha256, archive_sha256),
+             crawled_at     = excluded.crawled_at,
+             status         = 'indexed'
+         RETURNING id",
+        params![
+            package_id,
+            pkg.version,
+            pkg.published_at,
+            pkg.license_spdx,
+            pkg.archive_url,
+            pkg.archive_sha256
+        ],
+        |r| r.get(0),
+    )?;
+    Ok(version_id)
+}
+
+fn insert_file(
+    tx: &Transaction<'_>,
+    file: &FileFeatures,
+    summary: &mut IndexSummary,
+) -> Result<i64> {
+    tx.execute(
+        "INSERT INTO source_file (content_sha256, language, function_count) VALUES (?1, ?2, ?3)",
+        params![
+            file.content_sha256,
+            file.language.name(),
+            file.functions.len() as i64
+        ],
+    )?;
+    let file_id = tx.last_insert_rowid();
+
+    let mut insert_function = tx.prepare_cached(
+        "INSERT INTO function (source_file_id, parent_function_id, name, kind, start_line,
+                               end_line, start_column, end_column, start_byte, end_byte,
+                               token_count, node_count, depth)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+    )?;
+    let mut insert_exact =
+        tx.prepare_cached("INSERT INTO exact_hash (function_id, level, hash) VALUES (?1, ?2, ?3)")?;
+    let mut insert_fingerprint = tx.prepare_cached(
+        "INSERT INTO fingerprint (function_id, level, hash, position, start_line, end_line)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+    )?;
+    let mut insert_minhash = tx.prepare_cached(
+        "INSERT INTO minhash (function_id, level, signature) VALUES (?1, ?2, ?3)",
+    )?;
+    let mut insert_bucket = tx.prepare_cached(
+        "INSERT INTO lsh_bucket (level, band, bucket_hash, function_id) VALUES (?1, ?2, ?3, ?4)",
+    )?;
+
+    // Parents precede their children, so their ids are always known.
+    let mut ids: Vec<i64> = Vec::with_capacity(file.functions.len());
+    for function in &file.functions {
+        let parent_id = function.parent.map(|i| ids[i]);
+        insert_function.execute(params![
+            file_id,
+            parent_id,
+            function.name,
+            function.kind,
+            function.start_line as i64,
+            function.end_line as i64,
+            function.start_column as i64,
+            function.end_column as i64,
+            function.start_byte as i64,
+            function.end_byte as i64,
+            function.token_count as i64,
+            function.node_count as i64,
+            function.depth as i64,
+        ])?;
+        let function_id = tx.last_insert_rowid();
+        ids.push(function_id);
+        summary.functions += 1;
+        if function.is_indexed() {
+            summary.indexed_functions += 1;
+        }
+
+        for (level, hash) in &function.exact_hashes {
+            insert_exact.execute(params![function_id, level.as_u8(), &hash.0[..]])?;
+        }
+        for (level, features) in &function.features {
+            let level = level.as_u8();
+            for fp in &features.fingerprints {
+                insert_fingerprint.execute(params![
+                    function_id,
+                    level,
+                    fp.hash as i64,
+                    fp.position,
+                    fp.start_line,
+                    fp.end_line
+                ])?;
+            }
+            let signature: Vec<u8> = features
+                .minhash
+                .iter()
+                .flat_map(|h| h.to_le_bytes())
+                .collect();
+            insert_minhash.execute(params![function_id, level, signature])?;
+            for (band, bucket) in features.lsh_buckets.iter().enumerate() {
+                insert_bucket.execute(params![level, band as i64, *bucket as i64, function_id])?;
+            }
+        }
+    }
+    Ok(file_id)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pelicode_core::{Language, extract_source};
+
+    const SRC: &str = r#"
+class A {
+    int sum(int[] values) {
+        int total = 0;
+        for (int v : values) { total += v; }
+        return total;
+    }
+    Runnable r() { return () -> System.out.println("x"); }
+}
+"#;
+
+    fn file(path: &str) -> FileFeatures {
+        let config = Config {
+            min_tokens: 10,
+            ..Config::default()
+        };
+        FileFeatures {
+            path: path.into(),
+            language: Language::Java,
+            content_sha256: pelicode_core::extract::sha256_hex(SRC.as_bytes()),
+            functions: extract_source(Language::Java, SRC.as_bytes(), &config).unwrap(),
+        }
+    }
+
+    fn pkg(version: &str) -> PackageInfo {
+        PackageInfo {
+            ecosystem: "local".into(),
+            name: "demo".into(),
+            version: version.into(),
+            license_spdx: Some("MIT".into()),
+            ..PackageInfo::default()
+        }
+    }
+
+    #[test]
+    fn indexes_and_deduplicates_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut db = Database::open(dir.path().join("t.db"), &Config::default()).unwrap();
+
+        let first = db.index(&pkg("1.0"), &[file("A.java")]).unwrap();
+        assert_eq!(first.new_files, 1);
+        assert_eq!(first.functions, 3);
+
+        // Same content in another version and path: stored once, linked twice.
+        let second = db.index(&pkg("2.0"), &[file("src/A.java")]).unwrap();
+        assert_eq!(second.new_files, 0);
+
+        // Re-indexing a version replaces its file list.
+        db.index(&pkg("2.0"), &[file("src/A.java")]).unwrap();
+
+        let stats = db.stats().unwrap();
+        assert_eq!(stats.versions, 2);
+        assert_eq!(stats.source_files, 1);
+        assert_eq!(stats.functions, 3);
+
+        let rows = db.functions().unwrap();
+        assert_eq!(rows.len(), 6);
+        let lambda = rows.iter().find(|r| r.kind == "lambda_expression").unwrap();
+        assert!(lambda.parent_id.is_some());
+        assert_eq!(rows[0].exact_hashes.len(), 4);
+        let sum = rows.iter().find(|r| r.name == "sum").unwrap();
+        assert_eq!(
+            &SRC[sum.start_byte..sum.end_byte],
+            "int sum(int[] values) {\n        int total = 0;\n        for (int v : values) { total += v; }\n        return total;\n    }"
+        );
+        assert_eq!((sum.start_column, sum.end_column), (5, 5));
+        let lines: (i64, i64) = db
+            .conn
+            .query_row(
+                "SELECT MIN(start_line), MAX(end_line) FROM fingerprint WHERE function_id = ?1",
+                [sum.id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        // Winnowing need not select the last k-gram, so the range may end before the function.
+        assert!(
+            lines.0 >= 3 && lines.1 <= 7 && lines.0 < lines.1,
+            "{lines:?}"
+        );
+        assert_eq!(rows[0].license.as_deref(), Some("MIT"));
+    }
+
+    #[test]
+    fn rejects_incompatible_parameters() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("t.db");
+        Database::open(&path, &Config::default()).unwrap();
+        let other = Config {
+            kgram: 7,
+            ..Config::default()
+        };
+        assert!(matches!(
+            Database::open(&path, &other),
+            Err(Error::Incompatible { .. })
+        ));
+    }
+}
