@@ -113,7 +113,7 @@ impl Default for Config {
         Config {
             min_tokens: 50,
             ident_mode: IdentMode::Uniform,
-            kgram: 5,
+            kgram: 10,
             window: 4,
             minhash_size: 128,
             bands: 32,
