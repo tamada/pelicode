@@ -10,6 +10,18 @@ use xxhash_rust::xxh3::{xxh3_64, xxh3_64_with_seed};
 pub struct Hash128(pub [u8; 16]);
 
 impl Hash128 {
+    /// Hash of a token sequence: the first 128 bits of BLAKE3 over the tokens, each
+    /// followed by a separator, so that `["ab", "c"]` and `["a", "bc"]` differ.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use pelicode_core::Hash128;
+    ///
+    /// let tokens = |s: &str| s.split(' ').map(String::from).collect::<Vec<_>>();
+    /// assert_eq!(Hash128::of_tokens(&tokens("a b")), Hash128::of_tokens(&tokens("a b")));
+    /// assert_ne!(Hash128::of_tokens(&tokens("ab c")), Hash128::of_tokens(&tokens("a bc")));
+    /// ```
     pub fn of_tokens(tokens: &[String]) -> Hash128 {
         let mut hasher = blake3::Hasher::new();
         for token in tokens {
@@ -22,10 +34,30 @@ impl Hash128 {
         Hash128(bytes)
     }
 
+    /// The hash as 32 lower-case hexadecimal digits.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use pelicode_core::Hash128;
+    ///
+    /// assert_eq!(Hash128([0xab; 16]).to_hex(), "ab".repeat(16));
+    /// ```
     pub fn to_hex(&self) -> String {
         to_hex(&self.0)
     }
 
+    /// Parses 32 hexadecimal digits, as written by [`Hash128::to_hex`]; `None` for anything else.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use pelicode_core::Hash128;
+    ///
+    /// let hash = Hash128([0x01; 16]);
+    /// assert_eq!(Hash128::from_hex(&hash.to_hex()), Some(hash));
+    /// assert_eq!(Hash128::from_hex("not a hash"), None);
+    /// ```
     pub fn from_hex(hex: &str) -> Option<Hash128> {
         if hex.len() != 32 || !hex.is_ascii() {
             return None;
@@ -50,6 +82,15 @@ impl Serialize for Hash128 {
     }
 }
 
+/// Lower-case hexadecimal digits of `bytes`.
+///
+/// # Examples
+///
+/// ```
+/// use pelicode_core::hash::to_hex;
+///
+/// assert_eq!(to_hex(&[0x00, 0xff, 0x1a]), "00ff1a");
+/// ```
 pub fn to_hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
@@ -57,12 +98,14 @@ pub fn to_hex(bytes: &[u8]) -> String {
 /// A k-gram hash selected by winnowing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct Fingerprint {
+    /// Hash of the k-gram.
     #[serde(serialize_with = "serialize_u64_hex")]
     pub hash: u64,
     /// Index of the first token of the k-gram.
     pub position: u32,
     /// Source lines covered by the k-gram (1-based, inclusive).
     pub start_line: u32,
+    /// Last source line covered by the k-gram (1-based, inclusive).
     pub end_line: u32,
 }
 
@@ -81,6 +124,17 @@ pub(crate) fn serialize_u64_hex_vec<S: Serializer>(
 }
 
 /// Hashes of all k-grams of `tokens`. A sequence shorter than `k` yields one k-gram.
+///
+/// # Examples
+///
+/// ```
+/// use pelicode_core::hash::kgram_hashes;
+///
+/// let tokens: Vec<String> = "a b c d".split(' ').map(String::from).collect();
+/// assert_eq!(kgram_hashes(&tokens, 2).len(), 3); // ab, bc, cd
+/// assert_eq!(kgram_hashes(&tokens, 10).len(), 1); // shorter than k: one k-gram
+/// assert!(kgram_hashes(&[], 2).is_empty());
+/// ```
 pub fn kgram_hashes(tokens: &[String], k: usize) -> Vec<u64> {
     if tokens.is_empty() {
         return Vec::new();
@@ -98,6 +152,22 @@ pub fn kgram_hashes(tokens: &[String], k: usize) -> Vec<u64> {
 
 /// Winnowing (Schleimer et al., 2003): the rightmost minimum of every window of `w` hashes,
 /// as `(position, hash)` pairs.
+///
+/// Every window of `w` consecutive hashes contains a selected position, so two
+/// sequences sharing a run of at least `w` hashes share a selected hash.
+///
+/// # Examples
+///
+/// ```
+/// use pelicode_core::hash::winnow;
+///
+/// let hashes = [77, 72, 42, 17, 98, 50, 17, 98, 8, 88, 67, 39, 77, 72, 42, 17, 98];
+/// let selected = winnow(&hashes, 4);
+/// assert_eq!(selected[0], (3, 17));
+/// for start in 0..=hashes.len() - 4 {
+///     assert!(selected.iter().any(|(pos, _)| (start..start + 4).contains(pos)));
+/// }
+/// ```
 pub fn winnow(hashes: &[u64], w: usize) -> Vec<(usize, u64)> {
     let mut selected: Vec<(usize, u64)> = Vec::new();
     if hashes.is_empty() {
@@ -126,6 +196,20 @@ fn splitmix64(mut x: u64) -> u64 {
 }
 
 /// MinHash signature of a set of hashes; `None` for an empty set.
+///
+/// The signature does not depend on the order of the hashes or on duplicates.
+///
+/// # Examples
+///
+/// ```
+/// use pelicode_core::hash::minhash;
+///
+/// let a = minhash([1u64, 2, 3].into_iter(), 16).unwrap();
+/// let b = minhash([3u64, 2, 1, 1].into_iter(), 16).unwrap();
+/// assert_eq!(a, b);
+/// assert_eq!(a.len(), 16);
+/// assert_eq!(minhash(std::iter::empty(), 16), None);
+/// ```
 pub fn minhash(hashes: impl Iterator<Item = u64>, size: usize) -> Option<Vec<u64>> {
     let mut signature = vec![u64::MAX; size];
     let mut any = false;
@@ -143,6 +227,20 @@ pub fn minhash(hashes: impl Iterator<Item = u64>, size: usize) -> Option<Vec<u64
 }
 
 /// LSH bucket hashes: one per band of `signature`.
+///
+/// Two signatures share the bucket of a band when all the rows of that band agree,
+/// which is likely for similar sets and unlikely for dissimilar ones.
+///
+/// # Examples
+///
+/// ```
+/// use pelicode_core::hash::{lsh_buckets, minhash};
+///
+/// let a = minhash([1u64, 2, 3].into_iter(), 128).unwrap();
+/// let buckets = lsh_buckets(&a, 32);
+/// assert_eq!(buckets.len(), 32);
+/// assert_eq!(buckets, lsh_buckets(&a.clone(), 32));
+/// ```
 pub fn lsh_buckets(signature: &[u64], bands: usize) -> Vec<u64> {
     let rows = signature.len() / bands;
     signature
@@ -156,6 +254,20 @@ pub fn lsh_buckets(signature: &[u64], bands: usize) -> Vec<u64> {
 }
 
 /// Estimated Jaccard similarity of two MinHash signatures.
+///
+/// 0.0 when the signatures are empty or of different lengths.
+///
+/// # Examples
+///
+/// ```
+/// use pelicode_core::hash::{minhash, minhash_similarity};
+///
+/// let a = minhash((0u64..100).into_iter(), 128).unwrap();
+/// let b = minhash((0u64..100).into_iter(), 128).unwrap();
+/// let c = minhash((1000u64..1100).into_iter(), 128).unwrap();
+/// assert_eq!(minhash_similarity(&a, &b), 1.0);
+/// assert!(minhash_similarity(&a, &c) < 0.1);
+/// ```
 pub fn minhash_similarity(a: &[u64], b: &[u64]) -> f64 {
     if a.is_empty() || a.len() != b.len() {
         return 0.0;

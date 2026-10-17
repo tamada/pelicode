@@ -1,6 +1,6 @@
 //! crates.io: releases via the API, sources from the `.crate` archive.
 //!
-//! The crates.io data access policy (https://crates.io/data-access) allows
+//! The crates.io data access policy (<https://crates.io/data-access>) allows
 //! at most one API request per second, with a User-Agent that identifies the
 //! application and preferably a way to contact its operator. Archives come
 //! from static.crates.io, which has no rate limit.
@@ -12,6 +12,7 @@ use crate::http::Client;
 use crate::{Digest, Error, Release};
 use pelicode_db::PackageInfo;
 
+/// Name of crates.io in the database.
 pub const ECOSYSTEM: &str = "crates";
 
 const API: &str = "https://crates.io/api/v1";
@@ -25,6 +26,25 @@ fn valid_name(name: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
+/// The release `version` of the crate `name`, or the version crates.io shows by default.
+///
+/// # Errors
+///
+/// [`Error::NotFound`] when the package or version does not exist,
+/// [`Error::NoSources`] when it has no source archive, [`Error::Metadata`] when
+/// the response cannot be understood, and [`Error::Http`] for network failures.
+///
+/// # Examples
+///
+/// ```no_run
+/// use std::time::Duration;
+/// use pelicode_crawl::{Client, crates};
+///
+/// let client = Client::new(Some("https://example.org/about"), Duration::from_secs(1));
+/// let release = crates::resolve(&client, "uuid", Some("1.28.0"))?;
+/// println!("{} {}", release.package.name, release.package.version);
+/// # Ok::<(), pelicode_crawl::Error>(())
+/// ```
 pub fn resolve(client: &Client, name: &str, version: Option<&str>) -> Result<Release, Error> {
     if !valid_name(name) {
         return Err(Error::InvalidPackage(name.into()));
@@ -55,6 +75,22 @@ pub fn resolve(client: &Client, name: &str, version: Option<&str>) -> Result<Rel
 }
 
 /// The `n` most downloaded crates of all time.
+///
+/// # Errors
+///
+/// [`Error::Metadata`] when the response cannot be understood, and [`Error::Http`]
+/// for network failures.
+///
+/// # Examples
+///
+/// ```no_run
+/// use std::time::Duration;
+/// use pelicode_crawl::{Client, crates};
+///
+/// let client = Client::new(Some("https://example.org/about"), Duration::from_secs(1));
+/// let top = crates::top_packages(&client, 100)?;
+/// # Ok::<(), pelicode_crawl::Error>(())
+/// ```
 pub fn top_packages(client: &Client, n: usize) -> Result<Vec<String>, Error> {
     let mut names = Vec::with_capacity(n);
     let mut page = 1;
@@ -85,6 +121,15 @@ fn get_json(client: &Client, url: &str) -> Result<Value, Error> {
 }
 
 /// The version crates.io shows by default: the latest stable one, if any.
+///
+/// # Examples
+///
+/// ```
+/// use pelicode_crawl::crates::latest_version;
+///
+/// let json = serde_json::json!({"crate": {"default_version": "1.0.0", "max_version": "2.0.0-rc.1"}});
+/// assert_eq!(latest_version(&json).as_deref(), Some("1.0.0"));
+/// ```
 pub fn latest_version(json: &Value) -> Option<String> {
     let krate = &json["crate"];
     ["default_version", "max_stable_version", "max_version"]
@@ -94,6 +139,24 @@ pub fn latest_version(json: &Value) -> Option<String> {
 }
 
 /// A release from the response of `/crates/<name>/<version>`.
+///
+/// # Errors
+///
+/// [`Error::Metadata`] when the crate name or the version number is missing, and
+/// [`Error::NoSources`] when the version is yanked.
+///
+/// # Examples
+///
+/// ```
+/// use pelicode_crawl::crates::parse_release;
+///
+/// let json = serde_json::json!({"version": {
+///     "crate": "uuid", "num": "1.28.0", "license": "Apache-2.0 OR MIT", "checksum": "7cc1"
+/// }});
+/// let release = parse_release(&json).unwrap();
+/// assert_eq!(release.package.archive_url.as_deref(), Some("https://static.crates.io/crates/uuid/uuid-1.28.0.crate"));
+/// assert_eq!(release.package.license_spdx.as_deref(), Some("Apache-2.0 OR MIT"));
+/// ```
 pub fn parse_release(json: &Value) -> Result<Release, Error> {
     let v = &json["version"];
     let field = |key: &str| v[key].as_str().filter(|s| !s.is_empty()).map(String::from);

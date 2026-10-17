@@ -26,9 +26,13 @@ pub struct HashStatsInfo {
 /// A hash shared by several packages, with one function that has it.
 #[derive(Debug, Clone, Serialize)]
 pub struct CommonHash {
+    /// Normalization level of the hash.
     pub level: Level,
+    /// The hash (hex).
     pub hash: String,
+    /// Packages containing it.
     pub package_count: usize,
+    /// Functions containing it.
     pub function_count: usize,
     /// `ecosystem:package@version path:start-end name` of one function with the hash.
     pub sample: Option<String>,
@@ -36,6 +40,38 @@ pub struct CommonHash {
 
 impl Database {
     /// Rebuilds the document frequencies from the functions currently linked to packages.
+    ///
+    /// # Errors
+    ///
+    /// [`Error`](crate::Error) when the database cannot be read or written.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use pelicode_core::{Config, Language, extract_bytes};
+    /// # use pelicode_db::{Database, PackageInfo};
+    /// # let dir = tempfile::tempdir().unwrap();
+    /// # let config = Config { min_tokens: 0, ..Config::default() };
+    /// # let mut db = Database::open(dir.path().join("pelicode.db"), &config).unwrap();
+    /// # let source = b"def total(xs):\n    s = 0\n    for x in xs:\n        s += x * 2\n    return s\n";
+    /// # let file = extract_bytes("calc.py".as_ref(), Language::Python, source, &config).unwrap();
+    /// // The same function in two packages.
+    /// for name in ["calc", "copy"] {
+    ///     let package = PackageInfo {
+    ///         ecosystem: "pypi".into(),
+    ///         name: name.into(),
+    ///         version: "1.0".into(),
+    ///         ..PackageInfo::default()
+    ///     };
+    ///     db.index(&package, &[file.clone()]).unwrap();
+    /// }
+    /// assert!(db.hash_stats_info().unwrap().stale);
+    ///
+    /// let info = db.refresh_hash_stats().unwrap();
+    /// assert!(!info.stale);
+    /// assert_eq!(info.packages, 2);
+    /// assert!(info.common_exact_hashes > 0);
+    /// ```
     pub fn refresh_hash_stats(&mut self) -> Result<HashStatsInfo> {
         let tx = self.conn.transaction()?;
         tx.execute_batch(
@@ -75,6 +111,24 @@ impl Database {
         self.hash_stats_info()
     }
 
+    /// State of the hash statistics, without rebuilding them.
+    ///
+    /// # Errors
+    ///
+    /// [`Error`](crate::Error) when the database cannot be read.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use pelicode_core::Config;
+    /// use pelicode_db::Database;
+    ///
+    /// let dir = tempfile::tempdir().unwrap();
+    /// let db = Database::open(dir.path().join("pelicode.db"), &Config::default()).unwrap();
+    /// let info = db.hash_stats_info().unwrap();
+    /// assert_eq!(info.updated_at, None);
+    /// assert_eq!(info.packages, 0);
+    /// ```
     pub fn hash_stats_info(&self) -> Result<HashStatsInfo> {
         let meta = self.meta()?;
         let count = |table: &str| -> Result<usize> {
@@ -94,6 +148,33 @@ impl Database {
     }
 
     /// Packages with at least one indexed file.
+    ///
+    /// # Errors
+    ///
+    /// [`Error`](crate::Error) when the database cannot be read.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use pelicode_core::{Config, Language, extract_bytes};
+    /// # use pelicode_db::{Database, PackageInfo};
+    /// # let dir = tempfile::tempdir().unwrap();
+    /// # let config = Config { min_tokens: 0, ..Config::default() };
+    /// # let mut db = Database::open(dir.path().join("pelicode.db"), &config).unwrap();
+    /// # let source = b"def total(xs):\n    s = 0\n    for x in xs:\n        s += x * 2\n    return s\n";
+    /// # let file = extract_bytes("calc.py".as_ref(), Language::Python, source, &config).unwrap();
+    /// // The same function in two packages.
+    /// for name in ["calc", "copy"] {
+    ///     let package = PackageInfo {
+    ///         ecosystem: "pypi".into(),
+    ///         name: name.into(),
+    ///         version: "1.0".into(),
+    ///         ..PackageInfo::default()
+    ///     };
+    ///     db.index(&package, &[file.clone()]).unwrap();
+    /// }
+    /// assert_eq!(db.package_count().unwrap(), 2);
+    /// ```
     pub fn package_count(&self) -> Result<usize> {
         let n: i64 = self.conn.query_row(
             "SELECT COUNT(DISTINCT pv.package_id)
@@ -105,6 +186,39 @@ impl Database {
     }
 
     /// Packages containing a function with this exact hash (1 when not common).
+    ///
+    /// Counts as of the last [`Database::refresh_hash_stats`].
+    ///
+    /// # Errors
+    ///
+    /// [`Error`](crate::Error) when the database cannot be read.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use pelicode_core::{Config, Language, extract_bytes};
+    /// # use pelicode_db::{Database, PackageInfo};
+    /// # let dir = tempfile::tempdir().unwrap();
+    /// # let config = Config { min_tokens: 0, ..Config::default() };
+    /// # let mut db = Database::open(dir.path().join("pelicode.db"), &config).unwrap();
+    /// # let source = b"def total(xs):\n    s = 0\n    for x in xs:\n        s += x * 2\n    return s\n";
+    /// # let file = extract_bytes("calc.py".as_ref(), Language::Python, source, &config).unwrap();
+    /// // The same function in two packages.
+    /// for name in ["calc", "copy"] {
+    ///     let package = PackageInfo {
+    ///         ecosystem: "pypi".into(),
+    ///         name: name.into(),
+    ///         version: "1.0".into(),
+    ///         ..PackageInfo::default()
+    ///     };
+    ///     db.index(&package, &[file.clone()]).unwrap();
+    /// }
+    /// use pelicode_core::Level;
+    ///
+    /// db.refresh_hash_stats().unwrap();
+    /// let hash = &file.functions[0].exact_hashes[&Level::N1];
+    /// assert_eq!(db.exact_package_count(Level::N1, hash).unwrap(), 2);
+    /// ```
     pub fn exact_package_count(&self, level: Level, hash: &Hash128) -> Result<usize> {
         let mut stmt = self.conn.prepare_cached(
             "SELECT package_count FROM exact_stats WHERE level = ?1 AND hash = ?2",
@@ -116,6 +230,40 @@ impl Database {
     }
 
     /// Packages containing this fingerprint (1 when not common).
+    ///
+    /// Counts as of the last [`Database::refresh_hash_stats`].
+    ///
+    /// # Errors
+    ///
+    /// [`Error`](crate::Error) when the database cannot be read.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use pelicode_core::{Config, Language, extract_bytes};
+    /// # use pelicode_db::{Database, PackageInfo};
+    /// # let dir = tempfile::tempdir().unwrap();
+    /// # let config = Config { min_tokens: 0, ..Config::default() };
+    /// # let mut db = Database::open(dir.path().join("pelicode.db"), &config).unwrap();
+    /// # let source = b"def total(xs):\n    s = 0\n    for x in xs:\n        s += x * 2\n    return s\n";
+    /// # let file = extract_bytes("calc.py".as_ref(), Language::Python, source, &config).unwrap();
+    /// // The same function in two packages.
+    /// for name in ["calc", "copy"] {
+    ///     let package = PackageInfo {
+    ///         ecosystem: "pypi".into(),
+    ///         name: name.into(),
+    ///         version: "1.0".into(),
+    ///         ..PackageInfo::default()
+    ///     };
+    ///     db.index(&package, &[file.clone()]).unwrap();
+    /// }
+    /// use pelicode_core::Level;
+    ///
+    /// db.refresh_hash_stats().unwrap();
+    /// let fingerprint = file.functions[0].features[&Level::N1].fingerprints[0].hash;
+    /// assert_eq!(db.fingerprint_package_count(Level::N1, fingerprint).unwrap(), 2);
+    /// assert_eq!(db.fingerprint_package_count(Level::N1, 42).unwrap(), 1);
+    /// ```
     pub fn fingerprint_package_count(&self, level: Level, hash: u64) -> Result<usize> {
         let mut stmt = self.conn.prepare_cached(
             "SELECT package_count FROM fingerprint_stats WHERE level = ?1 AND hash = ?2",
@@ -128,6 +276,40 @@ impl Database {
 
     /// The exact hashes at `level` of functions with at least `min_tokens`
     /// tokens, shared by the most packages.
+    ///
+    /// Counts as of the last [`Database::refresh_hash_stats`].
+    ///
+    /// # Errors
+    ///
+    /// [`Error`](crate::Error) when the database cannot be read.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use pelicode_core::{Config, Language, extract_bytes};
+    /// # use pelicode_db::{Database, PackageInfo};
+    /// # let dir = tempfile::tempdir().unwrap();
+    /// # let config = Config { min_tokens: 0, ..Config::default() };
+    /// # let mut db = Database::open(dir.path().join("pelicode.db"), &config).unwrap();
+    /// # let source = b"def total(xs):\n    s = 0\n    for x in xs:\n        s += x * 2\n    return s\n";
+    /// # let file = extract_bytes("calc.py".as_ref(), Language::Python, source, &config).unwrap();
+    /// // The same function in two packages.
+    /// for name in ["calc", "copy"] {
+    ///     let package = PackageInfo {
+    ///         ecosystem: "pypi".into(),
+    ///         name: name.into(),
+    ///         version: "1.0".into(),
+    ///         ..PackageInfo::default()
+    ///     };
+    ///     db.index(&package, &[file.clone()]).unwrap();
+    /// }
+    /// use pelicode_core::Level;
+    ///
+    /// db.refresh_hash_stats().unwrap();
+    /// let common = db.common_exact_hashes(Level::N1, 0, 10).unwrap();
+    /// assert_eq!(common[0].package_count, 2);
+    /// assert!(common[0].sample.as_deref().unwrap().contains("total"));
+    /// ```
     pub fn common_exact_hashes(
         &self,
         level: Level,
@@ -173,6 +355,40 @@ impl Database {
     }
 
     /// The fingerprints at `level` shared by the most packages.
+    ///
+    /// Counts as of the last [`Database::refresh_hash_stats`].
+    ///
+    /// # Errors
+    ///
+    /// [`Error`](crate::Error) when the database cannot be read.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use pelicode_core::{Config, Language, extract_bytes};
+    /// # use pelicode_db::{Database, PackageInfo};
+    /// # let dir = tempfile::tempdir().unwrap();
+    /// # let config = Config { min_tokens: 0, ..Config::default() };
+    /// # let mut db = Database::open(dir.path().join("pelicode.db"), &config).unwrap();
+    /// # let source = b"def total(xs):\n    s = 0\n    for x in xs:\n        s += x * 2\n    return s\n";
+    /// # let file = extract_bytes("calc.py".as_ref(), Language::Python, source, &config).unwrap();
+    /// // The same function in two packages.
+    /// for name in ["calc", "copy"] {
+    ///     let package = PackageInfo {
+    ///         ecosystem: "pypi".into(),
+    ///         name: name.into(),
+    ///         version: "1.0".into(),
+    ///         ..PackageInfo::default()
+    ///     };
+    ///     db.index(&package, &[file.clone()]).unwrap();
+    /// }
+    /// use pelicode_core::Level;
+    ///
+    /// db.refresh_hash_stats().unwrap();
+    /// let common = db.common_fingerprints(Level::N1, 3).unwrap();
+    /// assert!(!common.is_empty() && common.len() <= 3);
+    /// assert!(common.iter().all(|c| c.package_count == 2));
+    /// ```
     pub fn common_fingerprints(&self, level: Level, limit: usize) -> Result<Vec<CommonHash>> {
         let mut stmt = self.conn.prepare(
             "SELECT hash, package_count, function_count FROM fingerprint_stats

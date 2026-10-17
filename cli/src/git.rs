@@ -59,6 +59,7 @@ impl Changes {
     }
 }
 
+/// Runs `git -C repo args...` and returns its standard output; fails when git does.
 fn git(repo: &Path, args: &[&str]) -> Result<Vec<u8>> {
     let output = Command::new("git")
         .arg("-C")
@@ -77,6 +78,7 @@ fn git(repo: &Path, args: &[&str]) -> Result<Vec<u8>> {
     Ok(output.stdout)
 }
 
+/// New-side line ranges of each file of a `git diff --unified=0` output.
 fn parse_diff(diff: &str) -> BTreeMap<PathBuf, Vec<(usize, usize)>> {
     let mut files: BTreeMap<PathBuf, Vec<(usize, usize)>> = BTreeMap::new();
     let mut current: Option<PathBuf> = None;

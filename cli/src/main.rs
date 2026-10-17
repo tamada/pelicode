@@ -1,3 +1,10 @@
+//! The `pelicode` command: crawl, index, stats, scan, extract, export and
+//! languages, on top of the pelicode-core, -db, -detect and -crawl crates.
+
+// The doc comments of the clap arguments are the text of `--help`, where
+// `NAME[@VERSION]` is notation, not a link.
+#![allow(rustdoc::broken_intra_doc_links)]
+
 mod crawl;
 mod git;
 mod output;
@@ -68,6 +75,7 @@ struct FeatureArgs {
 }
 
 impl FeatureArgs {
+    /// The feature parameters as a validated [`Config`].
     fn config(&self, keep_tokens: bool) -> Result<Config> {
         let config = Config {
             min_tokens: self.min_tokens,
@@ -161,6 +169,7 @@ enum SummaryFormat {
     Json,
 }
 
+/// Runs the command; output cut short by a closed pipe (`| head`) is not an error.
 fn main() -> Result<()> {
     match run(Cli::parse()) {
         // Output piped into `head` and the like.
@@ -169,6 +178,7 @@ fn main() -> Result<()> {
     }
 }
 
+/// Whether `e` comes from writing to a closed pipe.
 fn is_broken_pipe(e: &anyhow::Error) -> bool {
     e.chain().any(|cause| {
         cause
@@ -183,6 +193,7 @@ fn is_broken_pipe(e: &anyhow::Error) -> bool {
     })
 }
 
+/// Dispatches to the subcommand; `crawl` and `scan` exit with status 1 on failure or match.
 fn run(cli: Cli) -> Result<()> {
     match cli.command {
         Command::Index(args) => index(args),
@@ -236,6 +247,7 @@ fn extract_paths(paths: &[PathBuf], config: &Config) -> Result<Vec<FileFeatures>
     Ok(results)
 }
 
+/// `pelicode index`: extracts the given paths and stores them as one package version.
 fn index(args: IndexArgs) -> Result<()> {
     let config = args.features.config(false)?;
     let name = match &args.name {
@@ -292,6 +304,7 @@ fn index(args: IndexArgs) -> Result<()> {
     Ok(())
 }
 
+/// Package name from the name of `path` (or of its directory when it is a file).
 fn default_name(path: &Path) -> Result<String> {
     let path = path
         .canonicalize()
@@ -310,6 +323,7 @@ fn default_name(path: &Path) -> Result<String> {
     }
 }
 
+/// `pelicode extract`: prints the features of the given paths, without a database.
 fn extract(args: ExtractArgs) -> Result<()> {
     let config = args.features.config(args.tokens.is_some())?;
     let files = extract_paths(&args.paths, &config)?;
@@ -323,6 +337,7 @@ fn extract(args: ExtractArgs) -> Result<()> {
     Ok(())
 }
 
+/// `pelicode export`: prints the functions stored in the database.
 fn export(args: ExportArgs) -> Result<()> {
     if !args.db.exists() {
         bail!("{}: no such database", args.db.display());
@@ -339,6 +354,7 @@ fn export(args: ExportArgs) -> Result<()> {
     Ok(())
 }
 
+/// A buffered writer to `path`, or to the standard output.
 fn open_output(path: Option<&Path>) -> Result<Box<dyn Write>> {
     Ok(match path {
         Some(path) => Box::new(BufWriter::new(

@@ -4,6 +4,8 @@
 //! strongest normalization, then LSH buckets, then the fingerprint sets of
 //! the LSH candidates are compared.
 
+#![warn(missing_docs)]
+
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::PathBuf;
@@ -14,11 +16,22 @@ use serde::Serialize;
 
 pub use pelicode_db::Error;
 
+/// Result of the detection, whose errors are those of the database.
 pub type Result<T> = std::result::Result<T, Error>;
 
 /// Levels searched for exact matches, in order of preference.
 const EXACT_LEVELS: [Level; 3] = [Level::N0, Level::N1, Level::N2];
 
+/// Parameters of the search.
+///
+/// # Examples
+///
+/// ```
+/// use pelicode_detect::Options;
+///
+/// let options = Options { threshold: 0.5, stop_packages: 0, ..Options::default() };
+/// assert_eq!(options.max_candidates, 5);
+/// ```
 #[derive(Debug, Clone)]
 pub struct Options {
     /// Functions with fewer tokens are not checked.
@@ -71,6 +84,7 @@ pub enum MatchKind {
 /// A stored function similar to a checked function.
 #[derive(Debug, Clone, Serialize)]
 pub struct Candidate {
+    /// How the candidate matched.
     #[serde(rename = "match")]
     pub kind: MatchKind,
     /// 1.0 for exact matches; the (weighted) Jaccard similarity of fingerprint sets otherwise.
@@ -80,29 +94,81 @@ pub struct Candidate {
     /// For exact matches, the number of packages containing the same normalized function.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub package_count: Option<usize>,
+    /// Number of fingerprints the two functions share, common ones excluded.
     pub shared_fingerprints: usize,
     /// Lines of the checked function covered by shared fingerprints.
     pub matched_lines: Vec<(u32, u32)>,
     /// Lines of the candidate covered by shared fingerprints.
     pub candidate_lines: Vec<(u32, u32)>,
+    /// The stored function.
     pub function: FunctionInfo,
     /// Where the candidate appears, earliest publication first (at most `max_occurrences`).
     pub occurrences: Vec<Occurrence>,
+    /// Number of places the stored function was found, excluded packages aside.
     pub occurrence_count: usize,
 }
 
 /// Detection result of one checked function.
 #[derive(Debug, Clone, Serialize)]
 pub struct Report {
+    /// File of the checked function.
     pub path: PathBuf,
+    /// Language of the checked function.
     pub language: Language,
+    /// Name of the checked function.
     pub name: String,
+    /// First line of the checked function (1-based).
     pub start_line: usize,
+    /// Last line of the checked function (1-based, inclusive).
     pub end_line: usize,
+    /// Number of tokens of the checked function.
     pub token_count: usize,
+    /// Candidates, best first.
     pub candidates: Vec<Candidate>,
 }
 
+/// Searches a database for functions similar to checked ones.
+///
+/// # Examples
+///
+/// ```
+/// # use pelicode_core::{Config, Language, extract_bytes};
+/// # use pelicode_db::{Database, PackageInfo};
+/// # use pelicode_detect::{Detector, MatchKind, Options};
+/// # let dir = tempfile::tempdir().unwrap();
+/// # let config = Config::default();
+/// # let mut db = Database::open(dir.path().join("pelicode.db"), &config).unwrap();
+/// let original = br#"class Search {
+///     static int find(int[] values, int key) {
+///         int low = 0, high = values.length - 1;
+///         while (low <= high) {
+///             int mid = (low + high) >>> 1;
+///             if (values[mid] < key) low = mid + 1;
+///             else if (values[mid] > key) high = mid - 1;
+///             else return mid;
+///         }
+///         return -(low + 1);
+///     }
+/// }"#;
+/// let package = PackageInfo {
+///     ecosystem: "maven".into(),
+///     name: "org.example:search".into(),
+///     version: "1.0".into(),
+///     ..PackageInfo::default()
+/// };
+/// let stored = extract_bytes("Search.java".as_ref(), Language::Java, original, &config).unwrap();
+/// db.index(&package, &[stored]).unwrap();
+///
+/// // The same code with other names.
+/// let copy = String::from_utf8_lossy(original)
+///     .replace("Search", "Finder").replace("values", "xs").replace("key", "target");
+/// let checked = extract_bytes("Finder.java".as_ref(), Language::Java, copy.as_bytes(), &config).unwrap();
+/// let detector = Detector::new(&db, Options { min_tokens: 20, ..Options::default() }).unwrap();
+/// let reports = detector.detect(&[checked], |_, _| true).unwrap();
+/// assert_eq!(reports[0].name, "find");
+/// assert_eq!(reports[0].candidates[0].kind, MatchKind::Exact(pelicode_core::Level::N1));
+/// assert_eq!(reports[0].candidates[0].occurrences[0].package, "org.example:search");
+/// ```
 pub struct Detector<'a> {
     db: &'a Database,
     options: Options,
@@ -114,6 +180,22 @@ pub struct Detector<'a> {
 impl<'a> Detector<'a> {
     /// `db` must have been opened for features computed like the checked ones
     /// (see [`Database::config_from_meta`]).
+    ///
+    /// # Errors
+    ///
+    /// [`Error`] when the database cannot be read.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use pelicode_core::Config;
+    /// use pelicode_db::Database;
+    /// use pelicode_detect::{Detector, Options};
+    ///
+    /// let dir = tempfile::tempdir().unwrap();
+    /// let db = Database::open(dir.path().join("pelicode.db"), &Config::default()).unwrap();
+    /// let detector = Detector::new(&db, Options::default()).unwrap();
+    /// ```
     pub fn new(db: &'a Database, options: Options) -> Result<Detector<'a>> {
         Ok(Detector {
             db,
@@ -169,6 +251,52 @@ impl<'a> Detector<'a> {
 
     /// Checks the functions of `files` accepted by `select`; only functions
     /// with at least one candidate are reported.
+    ///
+    /// # Errors
+    ///
+    /// [`Error`] when the database cannot be read.
+    ///
+    /// # Examples
+    ///
+    /// Only the functions accepted by `select` are checked, here those starting
+    /// after line 1:
+    ///
+    /// ```
+    /// # use pelicode_core::{Config, Language, extract_bytes};
+    /// # use pelicode_db::{Database, PackageInfo};
+    /// # use pelicode_detect::{Detector, MatchKind, Options};
+    /// # let dir = tempfile::tempdir().unwrap();
+    /// # let config = Config::default();
+    /// # let mut db = Database::open(dir.path().join("pelicode.db"), &config).unwrap();
+    /// let original = br#"class Search {
+    ///     static int find(int[] values, int key) {
+    ///         int low = 0, high = values.length - 1;
+    ///         while (low <= high) {
+    ///             int mid = (low + high) >>> 1;
+    ///             if (values[mid] < key) low = mid + 1;
+    ///             else if (values[mid] > key) high = mid - 1;
+    ///             else return mid;
+    ///         }
+    ///         return -(low + 1);
+    ///     }
+    /// }"#;
+    /// let package = PackageInfo {
+    ///     ecosystem: "maven".into(),
+    ///     name: "org.example:search".into(),
+    ///     version: "1.0".into(),
+    ///     ..PackageInfo::default()
+    /// };
+    /// let stored = extract_bytes("Search.java".as_ref(), Language::Java, original, &config).unwrap();
+    /// db.index(&package, &[stored]).unwrap();
+    ///
+    /// // The same code with other names.
+    /// let copy = String::from_utf8_lossy(original)
+    ///     .replace("Search", "Finder").replace("values", "xs").replace("key", "target");
+    /// let checked = extract_bytes("Finder.java".as_ref(), Language::Java, copy.as_bytes(), &config).unwrap();
+    /// let detector = Detector::new(&db, Options { min_tokens: 20, ..Options::default() }).unwrap();
+    /// let reports = detector.detect(&[checked], |_, f| f.start_line > 1).unwrap();
+    /// assert_eq!(reports.len(), 1);
+    /// ```
     pub fn detect(
         &self,
         files: &[FileFeatures],
@@ -199,6 +327,52 @@ impl<'a> Detector<'a> {
     }
 
     /// Candidates for one function, best first.
+    ///
+    /// Unlike [`Detector::detect`], the function is checked whatever its size.
+    ///
+    /// # Errors
+    ///
+    /// [`Error`] when the database cannot be read.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use pelicode_core::{Config, Language, extract_bytes};
+    /// # use pelicode_db::{Database, PackageInfo};
+    /// # use pelicode_detect::{Detector, MatchKind, Options};
+    /// # let dir = tempfile::tempdir().unwrap();
+    /// # let config = Config::default();
+    /// # let mut db = Database::open(dir.path().join("pelicode.db"), &config).unwrap();
+    /// let original = br#"class Search {
+    ///     static int find(int[] values, int key) {
+    ///         int low = 0, high = values.length - 1;
+    ///         while (low <= high) {
+    ///             int mid = (low + high) >>> 1;
+    ///             if (values[mid] < key) low = mid + 1;
+    ///             else if (values[mid] > key) high = mid - 1;
+    ///             else return mid;
+    ///         }
+    ///         return -(low + 1);
+    ///     }
+    /// }"#;
+    /// let package = PackageInfo {
+    ///     ecosystem: "maven".into(),
+    ///     name: "org.example:search".into(),
+    ///     version: "1.0".into(),
+    ///     ..PackageInfo::default()
+    /// };
+    /// let stored = extract_bytes("Search.java".as_ref(), Language::Java, original, &config).unwrap();
+    /// db.index(&package, &[stored]).unwrap();
+    ///
+    /// // The same code with other names.
+    /// let copy = String::from_utf8_lossy(original)
+    ///     .replace("Search", "Finder").replace("values", "xs").replace("key", "target");
+    /// let checked = extract_bytes("Finder.java".as_ref(), Language::Java, copy.as_bytes(), &config).unwrap();
+    /// let detector = Detector::new(&db, Options::default()).unwrap();
+    /// let candidates = detector.candidates(&checked.functions[0]).unwrap();
+    /// assert_eq!(candidates[0].similarity, 1.0);
+    /// assert_eq!(candidates[0].function.name, "find");
+    /// ```
     pub fn candidates(&self, function: &FunctionFeatures) -> Result<Vec<Candidate>> {
         let mut found: HashMap<i64, Match> = HashMap::new();
 

@@ -25,12 +25,32 @@ pub enum Level {
 }
 
 impl Level {
+    /// Every level, from the least to the most abstract.
     pub const ALL: [Level; 4] = [Level::N0, Level::N1, Level::N2, Level::N3];
 
+    /// The level as a number, 0 for [`Level::N0`] to 3 for [`Level::N3`], as stored in a database.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use pelicode_core::Level;
+    ///
+    /// assert_eq!(Level::N2.as_u8(), 2);
+    /// ```
     pub fn as_u8(self) -> u8 {
         self as u8
     }
 
+    /// The level of a number returned by [`Level::as_u8`]; `None` for any other number.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use pelicode_core::Level;
+    ///
+    /// assert_eq!(Level::from_u8(1), Some(Level::N1));
+    /// assert_eq!(Level::from_u8(4), None);
+    /// ```
     pub fn from_u8(value: u8) -> Option<Level> {
         Level::ALL.get(value as usize).copied()
     }
@@ -93,6 +113,7 @@ impl FromStr for IdentMode {
 pub struct Config {
     /// Functions with fewer N0 tokens get exact hashes only (no fingerprints / MinHash).
     pub min_tokens: usize,
+    /// How identifiers are abstracted from N1.
     pub ident_mode: IdentMode,
     /// k of the k-grams used for fingerprints.
     pub kgram: usize,
@@ -124,6 +145,23 @@ impl Default for Config {
 }
 
 impl Config {
+    /// Checks that the parameters can be used: `kgram` and `window` are positive, and
+    /// `minhash_size` is a positive multiple of `bands`.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::InvalidConfig`] describing the first invalid parameter.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use pelicode_core::Config;
+    ///
+    /// assert!(Config::default().validate().is_ok());
+    ///
+    /// let config = Config { minhash_size: 100, bands: 32, ..Config::default() };
+    /// assert!(config.validate().is_err());
+    /// ```
     pub fn validate(&self) -> Result<(), Error> {
         if self.kgram == 0 || self.window == 0 {
             return Err(Error::InvalidConfig(
@@ -143,6 +181,15 @@ impl Config {
     }
 
     /// Rows per LSH band.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use pelicode_core::Config;
+    ///
+    /// let config = Config { minhash_size: 128, bands: 32, ..Config::default() };
+    /// assert_eq!(config.rows(), 4);
+    /// ```
     pub fn rows(&self) -> usize {
         self.minhash_size / self.bands
     }

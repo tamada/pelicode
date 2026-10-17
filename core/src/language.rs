@@ -10,15 +10,22 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Language {
+    /// Go (`.go`).
     Go,
+    /// Java (`.java`).
     Java,
+    /// Kotlin (`.kt`, `.kts`).
     Kotlin,
+    /// Python (`.py`).
     Python,
+    /// Ruby (`.rb`).
     Ruby,
+    /// Rust (`.rs`).
     Rust,
 }
 
 impl Language {
+    /// Every supported language.
     pub const ALL: [Language; 6] = [
         Language::Go,
         Language::Java,
@@ -28,6 +35,16 @@ impl Language {
         Language::Rust,
     ];
 
+    /// Lower-case name of the language, as used in databases and reports.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use pelicode_core::Language;
+    ///
+    /// assert_eq!(Language::Kotlin.name(), "kotlin");
+    /// assert_eq!("kotlin".parse::<Language>(), Ok(Language::Kotlin));
+    /// ```
     pub fn name(self) -> &'static str {
         match self {
             Language::Go => "go",
@@ -39,6 +56,15 @@ impl Language {
         }
     }
 
+    /// File extensions of the language, without the leading dot.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use pelicode_core::Language;
+    ///
+    /// assert_eq!(Language::Kotlin.extensions(), ["kt", "kts"]);
+    /// ```
     pub fn extensions(self) -> &'static [&'static str] {
         match self {
             Language::Go => &["go"],
@@ -50,18 +76,51 @@ impl Language {
         }
     }
 
+    /// The language of a file extension (without the dot); `None` when unsupported.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use pelicode_core::Language;
+    ///
+    /// assert_eq!(Language::from_extension("rs"), Some(Language::Rust));
+    /// assert_eq!(Language::from_extension("c"), None);
+    /// ```
     pub fn from_extension(ext: &str) -> Option<Language> {
         Language::ALL
             .into_iter()
             .find(|lang| lang.extensions().contains(&ext))
     }
 
+    /// The language of a file, from its extension; `None` when unsupported.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::path::Path;
+    /// use pelicode_core::Language;
+    ///
+    /// assert_eq!(Language::from_path(Path::new("src/Main.java")), Some(Language::Java));
+    /// assert_eq!(Language::from_path(Path::new("README.md")), None);
+    /// ```
     pub fn from_path(path: &Path) -> Option<Language> {
         path.extension()
             .and_then(|ext| ext.to_str())
             .and_then(Language::from_extension)
     }
 
+    /// The Tree-sitter grammar of the language.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use pelicode_core::Language;
+    ///
+    /// let mut parser = tree_sitter::Parser::new();
+    /// parser.set_language(&Language::Go.ts_language()).unwrap();
+    /// let tree = parser.parse("package main", None).unwrap();
+    /// assert_eq!(tree.root_node().kind(), "source_file");
+    /// ```
     pub fn ts_language(self) -> tree_sitter::Language {
         match self {
             Language::Go => tree_sitter_go::LANGUAGE.into(),

@@ -8,6 +8,7 @@ use crate::http::Client;
 use crate::{Digest, Error, Release};
 use pelicode_db::PackageInfo;
 
+/// Name of Maven Central in the database.
 pub const ECOSYSTEM: &str = "maven";
 
 const REPOSITORY: &str = "https://repo1.maven.org/maven2";
@@ -18,12 +19,29 @@ const MAX_PARENTS: usize = 5;
 /// `groupId:artifactId`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Coordinates {
+    /// The `groupId`.
     pub group: String,
+    /// The `artifactId`.
     pub artifact: String,
 }
 
 impl Coordinates {
     /// Parses `group:artifact` or `group:artifact:version`.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::InvalidPackage`] when `s` has not two or three non-empty parts.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use pelicode_crawl::maven::Coordinates;
+    ///
+    /// let (coords, version) = Coordinates::parse("com.google.code.gson:gson:2.11.0").unwrap();
+    /// assert_eq!((coords.group.as_str(), coords.artifact.as_str()), ("com.google.code.gson", "gson"));
+    /// assert_eq!(version.as_deref(), Some("2.11.0"));
+    /// assert!(Coordinates::parse("gson").is_err());
+    /// ```
     pub fn parse(s: &str) -> Result<(Coordinates, Option<String>), Error> {
         let parts: Vec<&str> = s.split(':').collect();
         let (group, artifact, version) = match parts.as_slice() {
@@ -64,6 +82,27 @@ impl Coordinates {
     }
 }
 
+/// The release `version` of `coords`, or its latest release, with the license
+/// and repository from the POM (or its parents) and the SHA-1 of the sources jar.
+///
+/// # Errors
+///
+/// [`Error::NotFound`] when the artifact or version does not exist,
+/// [`Error::NoSources`] when it has no sources jar, [`Error::Metadata`] when the
+/// metadata or the POM cannot be understood, and [`Error::Http`] for network
+/// failures.
+///
+/// # Examples
+///
+/// ```no_run
+/// use std::time::Duration;
+/// use pelicode_crawl::{Client, maven};
+///
+/// let client = Client::new(Some("https://example.org/about"), Duration::from_secs(1));
+/// let (coords, version) = maven::Coordinates::parse("com.google.code.gson:gson:2.11.0")?;
+/// let release = maven::resolve(&client, &coords, version.as_deref())?;
+/// # Ok::<(), pelicode_crawl::Error>(())
+/// ```
 pub fn resolve(
     client: &Client,
     coords: &Coordinates,
@@ -117,6 +156,17 @@ fn text(body: &[u8], url: &str) -> Result<String, Error> {
     String::from_utf8(body.to_vec()).map_err(|_| Error::Metadata(format!("{url}: not UTF-8")))
 }
 
+/// The release version in `maven-metadata.xml`: `<release>`, else `<latest>`, else
+/// the last of `<versions>`.
+///
+/// # Examples
+///
+/// ```
+/// use pelicode_crawl::maven::latest_version;
+///
+/// let xml = "<metadata><versioning><latest>2.0-SNAPSHOT</latest><release>1.9</release></versioning></metadata>";
+/// assert_eq!(latest_version(xml).as_deref(), Some("1.9"));
+/// ```
 pub fn latest_version(metadata: &str) -> Option<String> {
     let doc = Document::parse(metadata).ok()?;
     let versioning = child(doc.root_element(), "versioning")?;
@@ -133,13 +183,36 @@ pub fn latest_version(metadata: &str) -> Option<String> {
         })
 }
 
+/// What pelicode reads from a POM.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct PomInfo {
+    /// Licenses, as SPDX identifiers where recognized, joined with `OR`.
     pub license: Option<String>,
+    /// `<scm><url>`, else `<url>`, unless it holds a `${...}` property.
     pub repository: Option<String>,
+    /// The parent POM and its version.
     pub parent: Option<(Coordinates, String)>,
 }
 
+/// Reads the license, the repository and the parent of a POM.
+///
+/// # Errors
+///
+/// [`Error::Metadata`] when the POM is not well-formed XML.
+///
+/// # Examples
+///
+/// ```
+/// use pelicode_crawl::maven::parse_pom;
+///
+/// let pom = r#"<project xmlns="http://maven.apache.org/POM/4.0.0">
+///   <licenses><license><name>Apache License, Version 2.0</name></license></licenses>
+///   <scm><url>https://github.com/google/gson</url></scm>
+/// </project>"#;
+/// let info = parse_pom(pom).unwrap();
+/// assert_eq!(info.license.as_deref(), Some("Apache-2.0"));
+/// assert_eq!(info.repository.as_deref(), Some("https://github.com/google/gson"));
+/// ```
 pub fn parse_pom(pom: &str) -> Result<PomInfo, Error> {
     let doc = Document::parse(pom).map_err(|e| Error::Metadata(format!("POM: {e}")))?;
     let project = doc.root_element();

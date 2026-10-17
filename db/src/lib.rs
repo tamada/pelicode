@@ -1,5 +1,7 @@
 //! SQLite storage of function features (spec §6).
 
+#![warn(missing_docs)]
+
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
 use std::str::FromStr;
@@ -8,16 +10,23 @@ use pelicode_core::{Config, FileFeatures, Level, NORMALIZER_VERSION};
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use serde::Serialize;
 
+/// Errors of the database.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    /// An error of SQLite.
     #[error(transparent)]
     Sqlite(#[from] rusqlite::Error),
+    /// The database was built with other parameters or another table layout than the current ones.
     #[error("database was built with {key} = {stored}, but the current setting is {current}")]
     Incompatible {
+        /// Name of the parameter.
         key: String,
+        /// Value recorded in the database.
         stored: String,
+        /// Value of the current setting.
         current: String,
     },
+    /// A parameter recorded in the database cannot be read.
     #[error("invalid value in database meta: {0}")]
     InvalidMeta(String),
 }
@@ -28,6 +37,7 @@ mod stats;
 pub use query::{FunctionInfo, Occurrence, StoredFingerprint};
 pub use stats::{CommonHash, HashStatsInfo};
 
+/// Result of the database operations.
 pub type Result<T> = std::result::Result<T, Error>;
 
 /// Version of the table layout; databases with another version are rejected.
@@ -143,19 +153,28 @@ CREATE TABLE IF NOT EXISTS fingerprint_stats (
 /// Where indexed source files come from.
 #[derive(Debug, Clone, Default)]
 pub struct PackageInfo {
+    /// Ecosystem of the package: `pypi`, `maven`, `go`, `rubygems`, `crates` or `local`.
     pub ecosystem: String,
+    /// Name of the package within its ecosystem.
     pub name: String,
+    /// Version of the package.
     pub version: String,
+    /// License, as an SPDX expression when it could be identified.
     pub license_spdx: Option<String>,
+    /// URL of the source repository.
     pub repository_url: Option<String>,
+    /// Publication date and time (RFC 3339).
     pub published_at: Option<String>,
+    /// URL the source archive was downloaded from.
     pub archive_url: Option<String>,
+    /// SHA-256 of the downloaded archive (hex).
     pub archive_sha256: Option<String>,
 }
 
 /// Result of [`Database::index`].
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct IndexSummary {
+    /// Files given to [`Database::index`].
     pub files: usize,
     /// Files whose content was not in the database yet.
     pub new_files: usize,
@@ -168,40 +187,91 @@ pub struct IndexSummary {
 /// Number of rows of the main tables.
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct Stats {
+    /// Ecosystems.
     pub ecosystems: usize,
+    /// Packages.
     pub packages: usize,
+    /// Package versions, failed ones included.
     pub versions: usize,
+    /// Distinct source files (by content).
     pub source_files: usize,
+    /// Stored functions.
     pub functions: usize,
+    /// Stored functions with fingerprints.
     pub indexed_functions: usize,
 }
 
 /// One occurrence of a stored function, for export.
 #[derive(Debug, Clone, Serialize)]
 pub struct FunctionRow {
+    /// Identifier of the function in the database.
     pub id: i64,
+    /// Ecosystem of the package.
     pub ecosystem: String,
+    /// Name of the package.
     pub package: String,
+    /// Version of the package.
     pub version: String,
+    /// License of the package version.
     pub license: Option<String>,
+    /// Path of the file in the package.
     pub path: String,
+    /// Language of the file.
     pub language: String,
+    /// Name of the function (for display).
     pub name: String,
+    /// Tree-sitter node kind of the function.
     pub kind: String,
+    /// First line (1-based).
     pub start_line: usize,
+    /// Last line (1-based, inclusive).
     pub end_line: usize,
+    /// 1-based byte column of the first character.
     pub start_column: usize,
+    /// 1-based byte column of the last character.
     pub end_column: usize,
+    /// Start of the byte range in the file.
     pub start_byte: usize,
+    /// End of the byte range in the file (exclusive).
     pub end_byte: usize,
+    /// Identifier of the enclosing function, if any.
     pub parent_id: Option<i64>,
+    /// Number of tokens.
     pub token_count: usize,
+    /// Number of named syntax tree nodes.
     pub node_count: usize,
+    /// Depth of the syntax tree.
     pub depth: usize,
+    /// Whether the function has fingerprints.
     pub indexed: bool,
+    /// Exact hashes per normalization level (hex).
     pub exact_hashes: BTreeMap<Level, String>,
 }
 
+/// A pelicode database: an SQLite file holding the features of functions and
+/// where they were found, but no source code.
+///
+/// # Examples
+///
+/// ```
+/// use pelicode_core::{Config, Language, extract_bytes};
+/// use pelicode_db::{Database, PackageInfo};
+///
+/// let dir = tempfile::tempdir().unwrap();
+/// let config = Config::default();
+/// let mut db = Database::open(dir.path().join("pelicode.db"), &config).unwrap();
+///
+/// let source = b"package demo\nfunc Add(a, b int) int { return a + b }\n";
+/// let file = extract_bytes("add.go".as_ref(), Language::Go, source, &config).unwrap();
+/// let package = PackageInfo {
+///     ecosystem: "local".into(),
+///     name: "demo".into(),
+///     version: "1.0".into(),
+///     ..PackageInfo::default()
+/// };
+/// db.index(&package, &[file]).unwrap();
+/// assert_eq!(db.stats().unwrap().functions, 1);
+/// ```
 pub struct Database {
     conn: Connection,
 }
@@ -209,6 +279,26 @@ pub struct Database {
 impl Database {
     /// Opens (or creates) a database for features computed with `config`.
     /// Fails when the database was built with incompatible parameters.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Incompatible`] when the database was built with other feature
+    /// parameters or another table layout, and [`Error::Sqlite`] when the file cannot
+    /// be opened.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use pelicode_core::Config;
+    /// use pelicode_db::{Database, Error};
+    ///
+    /// let dir = tempfile::tempdir().unwrap();
+    /// let path = dir.path().join("pelicode.db");
+    /// Database::open(&path, &Config::default()).unwrap();
+    ///
+    /// let other = Config { kgram: 5, ..Config::default() };
+    /// assert!(matches!(Database::open(&path, &other), Err(Error::Incompatible { .. })));
+    /// ```
     pub fn open(path: impl AsRef<Path>, config: &Config) -> Result<Database> {
         let db = Database::open_unchecked(path)?;
         db.check_meta(config)?;
@@ -216,6 +306,28 @@ impl Database {
     }
 
     /// Opens a database without checking its parameters (for reading).
+    ///
+    /// The table layout is still checked; use [`Database::config_from_meta`] to featurize
+    /// code like the stored functions.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Incompatible`] when the table layout differs, and [`Error::Sqlite`]
+    /// when the file cannot be opened.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use pelicode_core::Config;
+    /// use pelicode_db::Database;
+    ///
+    /// let dir = tempfile::tempdir().unwrap();
+    /// let path = dir.path().join("pelicode.db");
+    /// Database::open(&path, &Config { kgram: 5, ..Config::default() }).unwrap();
+    ///
+    /// let db = Database::open_unchecked(&path).unwrap();
+    /// assert_eq!(db.meta().unwrap()["kgram"], "5");
+    /// ```
     pub fn open_unchecked(path: impl AsRef<Path>) -> Result<Database> {
         let conn = Connection::open(path)?;
         conn.pragma_update(None, "journal_mode", "WAL")?;
@@ -246,6 +358,26 @@ impl Database {
     }
 
     /// The parameters recorded in the database.
+    ///
+    /// The keys are `schema_version`, `normalizer_version`, `ident_mode`, `kgram`,
+    /// `window`, `minhash_size` and `bands`, and the bookkeeping of the hash
+    /// statistics.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Sqlite`] when the table cannot be read.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use pelicode_core::Config;
+    /// # use pelicode_db::Database;
+    /// # let dir = tempfile::tempdir().unwrap();
+    /// let db = Database::open(dir.path().join("pelicode.db"), &Config::default()).unwrap();
+    /// let meta = db.meta().unwrap();
+    /// assert_eq!(meta["kgram"], "10");
+    /// assert_eq!(meta["window"], "4");
+    /// ```
     pub fn meta(&self) -> Result<BTreeMap<String, String>> {
         let mut stmt = self.conn.prepare("SELECT key, value FROM meta")?;
         let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
@@ -255,6 +387,26 @@ impl Database {
     /// `base` with the parameters recorded in the database, so that queries are
     /// featurized exactly like the stored functions. Fingerprint levels become
     /// the levels that actually have fingerprints in the database.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Incompatible`] when the database was built with other normalization
+    /// rules, and [`Error::InvalidMeta`] when a recorded parameter cannot be parsed.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use pelicode_core::Config;
+    /// use pelicode_db::Database;
+    ///
+    /// let dir = tempfile::tempdir().unwrap();
+    /// let path = dir.path().join("pelicode.db");
+    /// Database::open(&path, &Config { kgram: 7, ..Config::default() }).unwrap();
+    ///
+    /// let db = Database::open_unchecked(&path).unwrap();
+    /// let config = db.config_from_meta(&Config::default()).unwrap();
+    /// assert_eq!(config.kgram, 7);
+    /// ```
     pub fn config_from_meta(&self, base: &Config) -> Result<Config> {
         let stored = self.meta()?;
         fn parse<T: FromStr>(
@@ -331,6 +483,35 @@ impl Database {
     /// Stores `files` as the content of package version `pkg`, replacing what
     /// was previously recorded for that version. Files already in the
     /// database (same content hash) are linked without storing them again.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Sqlite`] when the files cannot be stored; nothing is stored then.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use pelicode_core::{Config, Language, extract_bytes};
+    /// use pelicode_db::{Database, PackageInfo};
+    ///
+    /// let dir = tempfile::tempdir().unwrap();
+    /// let config = Config::default();
+    /// let mut db = Database::open(dir.path().join("pelicode.db"), &config).unwrap();
+    /// let file = extract_bytes("a.rb".as_ref(), Language::Ruby, b"def one\n  1\nend\n", &config).unwrap();
+    /// let package = |version: &str| PackageInfo {
+    ///     ecosystem: "rubygems".into(),
+    ///     name: "one".into(),
+    ///     version: version.into(),
+    ///     ..PackageInfo::default()
+    /// };
+    ///
+    /// let first = db.index(&package("1.0"), &[file.clone()]).unwrap();
+    /// assert_eq!((first.files, first.new_files, first.functions), (1, 1, 1));
+    ///
+    /// // The same file in another version is linked, not stored again.
+    /// let second = db.index(&package("1.1"), &[file]).unwrap();
+    /// assert_eq!(second.new_files, 0);
+    /// ```
     pub fn index(&mut self, pkg: &PackageInfo, files: &[FileFeatures]) -> Result<IndexSummary> {
         let tx = self.conn.transaction()?;
         let version_id = upsert_version(&tx, pkg, "indexed", None)?;
@@ -375,6 +556,29 @@ impl Database {
     }
 
     /// Status of a package version (`indexed` or `failed`), if recorded.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Sqlite`] when the database cannot be read.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use pelicode_core::{Config, Language, extract_bytes};
+    /// # use pelicode_db::{Database, PackageInfo};
+    /// # let dir = tempfile::tempdir().unwrap();
+    /// # let config = Config { min_tokens: 0, ..Config::default() };
+    /// # let mut db = Database::open(dir.path().join("pelicode.db"), &config).unwrap();
+    /// # let source = b"def total(xs):\n    s = 0\n    for x in xs:\n        s += x * 2\n    return s\n";
+    /// # let file = extract_bytes("src/calc.py".as_ref(), Language::Python, source, &config).unwrap();
+    /// # let package = PackageInfo {
+    /// #     ecosystem: "pypi".into(), name: "calc".into(), version: "1.0".into(),
+    /// #     license_spdx: Some("MIT".into()), ..PackageInfo::default()
+    /// # };
+    /// # db.index(&package, &[file]).unwrap();
+    /// assert_eq!(db.version_status("pypi", "calc", "1.0").unwrap().as_deref(), Some("indexed"));
+    /// assert_eq!(db.version_status("pypi", "calc", "2.0").unwrap(), None);
+    /// ```
     pub fn version_status(
         &self,
         ecosystem: &str,
@@ -396,6 +600,28 @@ impl Database {
 
     /// Records that fetching or indexing `pkg` failed, so that it can be retried later.
     /// Files already linked to the version are kept.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Sqlite`] when the failure cannot be stored.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use pelicode_core::Config;
+    /// use pelicode_db::{Database, PackageInfo};
+    ///
+    /// let dir = tempfile::tempdir().unwrap();
+    /// let mut db = Database::open(dir.path().join("pelicode.db"), &Config::default()).unwrap();
+    /// let package = PackageInfo {
+    ///     ecosystem: "pypi".into(),
+    ///     name: "broken".into(),
+    ///     version: "0.1".into(),
+    ///     ..PackageInfo::default()
+    /// };
+    /// db.record_failure(&package, "digest mismatch").unwrap();
+    /// assert_eq!(db.version_status("pypi", "broken", "0.1").unwrap().as_deref(), Some("failed"));
+    /// ```
     pub fn record_failure(&mut self, pkg: &PackageInfo, error: &str) -> Result<()> {
         let tx = self.conn.transaction()?;
         upsert_version(&tx, pkg, "failed", Some(error))?;
@@ -403,6 +629,30 @@ impl Database {
         Ok(())
     }
 
+    /// Number of rows of the main tables.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Sqlite`] when the database cannot be read.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use pelicode_core::{Config, Language, extract_bytes};
+    /// # use pelicode_db::{Database, PackageInfo};
+    /// # let dir = tempfile::tempdir().unwrap();
+    /// # let config = Config { min_tokens: 0, ..Config::default() };
+    /// # let mut db = Database::open(dir.path().join("pelicode.db"), &config).unwrap();
+    /// # let source = b"def total(xs):\n    s = 0\n    for x in xs:\n        s += x * 2\n    return s\n";
+    /// # let file = extract_bytes("src/calc.py".as_ref(), Language::Python, source, &config).unwrap();
+    /// # let package = PackageInfo {
+    /// #     ecosystem: "pypi".into(), name: "calc".into(), version: "1.0".into(),
+    /// #     license_spdx: Some("MIT".into()), ..PackageInfo::default()
+    /// # };
+    /// # db.index(&package, &[file]).unwrap();
+    /// let stats = db.stats().unwrap();
+    /// assert_eq!((stats.packages, stats.versions, stats.functions), (1, 1, 1));
+    /// ```
     pub fn stats(&self) -> Result<Stats> {
         let count = |table: &str| -> Result<usize> {
             let n: i64 =
@@ -426,6 +676,31 @@ impl Database {
     }
 
     /// Every occurrence of every stored function, ordered by package and location.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Sqlite`] when the database cannot be read.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use pelicode_core::{Config, Language, extract_bytes};
+    /// # use pelicode_db::{Database, PackageInfo};
+    /// # let dir = tempfile::tempdir().unwrap();
+    /// # let config = Config { min_tokens: 0, ..Config::default() };
+    /// # let mut db = Database::open(dir.path().join("pelicode.db"), &config).unwrap();
+    /// # let source = b"def total(xs):\n    s = 0\n    for x in xs:\n        s += x * 2\n    return s\n";
+    /// # let file = extract_bytes("src/calc.py".as_ref(), Language::Python, source, &config).unwrap();
+    /// # let package = PackageInfo {
+    /// #     ecosystem: "pypi".into(), name: "calc".into(), version: "1.0".into(),
+    /// #     license_spdx: Some("MIT".into()), ..PackageInfo::default()
+    /// # };
+    /// # db.index(&package, &[file]).unwrap();
+    /// let rows = db.functions().unwrap();
+    /// assert_eq!(rows[0].name, "total");
+    /// assert_eq!(rows[0].path, "src/calc.py");
+    /// assert_eq!(rows[0].license.as_deref(), Some("MIT"));
+    /// ```
     pub fn functions(&self) -> Result<Vec<FunctionRow>> {
         let mut hashes: HashMap<i64, BTreeMap<Level, String>> = HashMap::new();
         let mut stmt = self

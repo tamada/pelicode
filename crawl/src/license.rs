@@ -2,6 +2,16 @@
 //! metadata does not declare a license (Go modules).
 
 /// The SPDX identifier of a well-known license text, if recognized.
+///
+/// # Examples
+///
+/// ```
+/// use pelicode_crawl::license::identify;
+///
+/// let text = "MIT License\n\nPermission is hereby granted, free of charge, to any person ...";
+/// assert_eq!(identify(text), Some("MIT"));
+/// assert_eq!(identify("All rights reserved."), None);
+/// ```
 pub fn identify(text: &str) -> Option<&'static str> {
     let t: String = text
         .to_ascii_lowercase()
@@ -37,6 +47,18 @@ pub fn identify(text: &str) -> Option<&'static str> {
 }
 
 /// The license of a package from its license files; several distinct ones are joined with `AND`.
+///
+/// # Examples
+///
+/// ```
+/// use pelicode_crawl::license::identify_all;
+///
+/// let texts = vec![
+///     "Apache License\nVersion 2.0, January 2004".to_string(),
+///     "Permission is hereby granted, free of charge, to any person".to_string(),
+/// ];
+/// assert_eq!(identify_all(&texts).as_deref(), Some("Apache-2.0 AND MIT"));
+/// ```
 pub fn identify_all(texts: &[String]) -> Option<String> {
     let mut ids: Vec<&str> = texts.iter().filter_map(|t| identify(t)).collect();
     ids.sort();

@@ -31,6 +31,7 @@ pub struct StatsArgs {
     format: SummaryFormat,
 }
 
+/// Runs `pelicode stats`, refreshing the hash statistics first with `--refresh`.
 pub fn run(args: StatsArgs) -> Result<()> {
     if !args.db.exists() {
         bail!("{}: no such database", args.db.display());
@@ -84,6 +85,7 @@ pub fn run(args: StatsArgs) -> Result<()> {
     Ok(())
 }
 
+/// Prints the most common hashes of one kind, with a sample function each.
 fn print_common(title: &str, hashes: &[CommonHash]) {
     if hashes.is_empty() {
         return;

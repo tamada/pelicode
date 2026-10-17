@@ -8,16 +8,19 @@ use pelicode_core::{FileFeatures, Hash128, Level};
 use pelicode_db::FunctionRow;
 use serde::Serialize;
 
+/// Writes `value` as pretty-printed JSON followed by a newline.
 pub fn json<T: Serialize + ?Sized>(out: &mut dyn Write, value: &T) -> Result<()> {
     serde_json::to_writer_pretty(&mut *out, value)?;
     writeln!(out)?;
     Ok(())
 }
 
+/// The first 16 hexadecimal digits of a hash, for text output.
 fn short(hash: &str) -> &str {
     &hash[..hash.len().min(16)]
 }
 
+/// Text output of `extract`: one line per function, and its tokens of `tokens` when given.
 pub fn extract_text(
     out: &mut dyn Write,
     files: &[FileFeatures],
@@ -46,6 +49,7 @@ pub fn extract_text(
     Ok(())
 }
 
+/// Text output of `export`: one line per stored function occurrence.
 pub fn export_text(out: &mut dyn Write, rows: &[FunctionRow]) -> Result<()> {
     for r in rows {
         writeln!(
@@ -91,6 +95,7 @@ struct ExtractRecord<'a> {
     tokens: Option<String>,
 }
 
+/// CSV output of `extract`: one row per function, with the tokens of `tokens` when given.
 pub fn extract_csv(
     out: &mut dyn Write,
     files: &[FileFeatures],
@@ -162,6 +167,7 @@ struct ExportRecord<'a> {
     n3: &'a str,
 }
 
+/// CSV output of `export`: one row per stored function occurrence.
 pub fn export_csv(out: &mut dyn Write, rows: &[FunctionRow]) -> Result<()> {
     let mut writer = csv::Writer::from_writer(out);
     for r in rows {
@@ -197,6 +203,7 @@ pub fn export_csv(out: &mut dyn Write, rows: &[FunctionRow]) -> Result<()> {
     Ok(())
 }
 
+/// The hash of `level`, or an empty string.
 fn hash_of(hashes: &BTreeMap<Level, String>, level: Level) -> &str {
     hashes.get(&level).map_or("", String::as_str)
 }

@@ -19,6 +19,7 @@ pub const MAX_TOTAL_SIZE: u64 = 1024 * 1024 * 1024;
 /// License files larger than this are not read.
 const MAX_LICENSE_SIZE: u64 = 256 * 1024;
 
+/// Format of a source archive.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ArchiveKind {
     /// `.zip`, `.jar`, `.whl`, Go module zips.
@@ -30,6 +31,18 @@ pub enum ArchiveKind {
 }
 
 impl ArchiveKind {
+    /// The format of an archive from its file name; `None` when unsupported.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use pelicode_crawl::archive::ArchiveKind;
+    ///
+    /// assert_eq!(ArchiveKind::from_file_name("demo-1.0.tar.gz"), Some(ArchiveKind::TarGz));
+    /// assert_eq!(ArchiveKind::from_file_name("gson-2.11.0-sources.jar"), Some(ArchiveKind::Zip));
+    /// assert_eq!(ArchiveKind::from_file_name("rack-3.1.8.gem"), Some(ArchiveKind::Gem));
+    /// assert_eq!(ArchiveKind::from_file_name("demo.tar.bz2"), None);
+    /// ```
     pub fn from_file_name(name: &str) -> Option<ArchiveKind> {
         let name = name.to_ascii_lowercase();
         if name.ends_with(".zip") || name.ends_with(".jar") || name.ends_with(".whl") {
@@ -46,8 +59,11 @@ impl ArchiveKind {
 
 /// A source file of a supported language read from an archive.
 pub struct Entry {
+    /// Path of the entry in the archive, with `/` as the separator.
     pub path: PathBuf,
+    /// Language of the entry.
     pub language: Language,
+    /// Content of the entry.
     pub content: Vec<u8>,
 }
 
@@ -62,6 +78,32 @@ pub struct Contents {
 
 /// Reads `bytes`, dropping the first `strip` path components of every entry
 /// (`name-1.0/` of an sdist, `module@version/` of a Go module).
+///
+/// Entries larger than [`MAX_ENTRY_SIZE`], and entries whose path is absolute or
+/// goes up with `..`, are skipped.
+///
+/// # Errors
+///
+/// [`Error::Archive`] when the archive cannot be read, or holds more than
+/// [`MAX_TOTAL_SIZE`] bytes of source files.
+///
+/// # Examples
+///
+/// ```
+/// use std::io::Write;
+/// use pelicode_crawl::archive::{ArchiveKind, read};
+///
+/// let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+/// for (name, content) in [("demo-1.0/demo/core.py", "x = 1"), ("demo-1.0/LICENSE", "MIT License")] {
+///     zip.start_file(name, zip::write::SimpleFileOptions::default()).unwrap();
+///     zip.write_all(content.as_bytes()).unwrap();
+/// }
+/// let bytes = zip.finish().unwrap().into_inner();
+///
+/// let contents = read(ArchiveKind::Zip, &bytes, 1).unwrap();
+/// assert_eq!(contents.sources[0].path, std::path::Path::new("demo/core.py"));
+/// assert_eq!(contents.license_texts, ["MIT License"]);
+/// ```
 pub fn read(kind: ArchiveKind, bytes: &[u8], strip: usize) -> Result<Contents, Error> {
     let mut collector = Collector {
         strip,

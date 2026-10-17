@@ -77,6 +77,7 @@ impl StopThreshold {
 impl std::str::FromStr for StopThreshold {
     type Err = String;
 
+    /// Parses `N` as a count and `P%` as a percentage from 0 to 100.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let invalid = || format!("expected a count or a percentage, got {s}");
         match s.strip_suffix('%') {
@@ -179,6 +180,7 @@ pub fn run(args: ScanArgs) -> Result<bool> {
     Ok(args.fail_on_match && !reports.is_empty())
 }
 
+/// `exact(N1)`, `similar(N1)` and so on.
 fn describe(kind: MatchKind) -> String {
     match kind {
         MatchKind::Exact(level) => format!("exact({level})"),
@@ -186,6 +188,7 @@ fn describe(kind: MatchKind) -> String {
     }
 }
 
+/// Line ranges as `1-3,5`.
 fn ranges(lines: &[(u32, u32)]) -> String {
     lines
         .iter()
@@ -200,6 +203,7 @@ fn ranges(lines: &[(u32, u32)]) -> String {
         .join(",")
 }
 
+/// `ecosystem:package@version path:start-end` of the first occurrence of a candidate.
 fn source(c: &Candidate) -> String {
     match c.occurrences.first() {
         Some(o) => format!(
@@ -210,6 +214,7 @@ fn source(c: &Candidate) -> String {
     }
 }
 
+/// Text output of `scan`: each function with candidates, followed by its candidates.
 fn text(out: &mut dyn Write, reports: &[Report]) -> Result<()> {
     if reports.is_empty() {
         writeln!(out, "No similar code candidates found.")?;
@@ -290,6 +295,7 @@ struct Record<'a> {
     occurrence_count: usize,
 }
 
+/// CSV output of `scan`: one row per candidate.
 fn csv(out: &mut dyn Write, reports: &[Report]) -> Result<()> {
     let mut writer = csv::Writer::from_writer(out);
     for r in reports {

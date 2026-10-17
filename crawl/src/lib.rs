@@ -1,6 +1,8 @@
 //! Crawler: fetches package sources from public repositories and indexes
 //! their functions (spec §5).
 
+#![warn(missing_docs)]
+
 pub mod archive;
 pub mod crates;
 pub mod go;
@@ -23,38 +25,78 @@ pub use http::Client;
 /// Archives larger than this are not downloaded.
 pub const MAX_ARCHIVE_SIZE: u64 = 512 * 1024 * 1024;
 
+/// Errors of crawling.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    /// A request failed; holds the URL.
     #[error("{0}: {1}")]
     Http(String, #[source] ureq::Error),
+    /// The package, version or file does not exist (HTTP 404); holds the URL.
     #[error("not found: {0}")]
     NotFound(String),
+    /// The metadata of the repository could not be understood.
     #[error("invalid metadata: {0}")]
     Metadata(String),
+    /// The release has no archive with source code, or was yanked.
     #[error("no source archive: {0}")]
     NoSources(String),
+    /// The archive could not be read, or is too large.
     #[error("archive error: {0}")]
     Archive(String),
+    /// The downloaded archive does not match the digest published by the repository.
     #[error("digest mismatch: expected {expected}, got {actual}")]
-    DigestMismatch { expected: String, actual: String },
+    DigestMismatch {
+        /// Digest published by the repository.
+        expected: String,
+        /// Digest of the downloaded archive.
+        actual: String,
+    },
+    /// The package name, the package specification or the ecosystem is invalid.
     #[error("invalid package: {0}")]
     InvalidPackage(String),
+    /// An error of the database.
     #[error(transparent)]
     Db(#[from] pelicode_db::Error),
+    /// An error of the feature extraction.
     #[error(transparent)]
     Core(#[from] pelicode_core::Error),
 }
 
+/// A public package repository.
+///
+/// # Examples
+///
+/// ```
+/// use pelicode_crawl::Ecosystem;
+///
+/// assert_eq!("crates.io".parse::<Ecosystem>().unwrap(), Ecosystem::Crates);
+/// assert_eq!(Ecosystem::Crates.to_string(), "crates");
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Ecosystem {
+    /// PyPI, the Python Package Index.
     PyPI,
+    /// Maven Central.
     Maven,
+    /// The Go module proxy (proxy.golang.org).
     Go,
+    /// RubyGems.org.
     RubyGems,
+    /// crates.io.
     Crates,
 }
 
 impl Ecosystem {
+    /// Name of the ecosystem as recorded in the database.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use pelicode_crawl::Ecosystem;
+    ///
+    /// assert_eq!(Ecosystem::PyPI.name(), "pypi");
+    /// assert_eq!(Ecosystem::RubyGems.name(), "rubygems");
+    /// ```
     pub fn name(self) -> &'static str {
         match self {
             Ecosystem::PyPI => pypi::ECOSYSTEM,
@@ -90,7 +132,9 @@ impl FromStr for Ecosystem {
 /// Expected digest of an archive, as published by the repository.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Digest {
+    /// SHA-256 of the archive (hex).
     Sha256(String),
+    /// SHA-1 of the archive (hex).
     Sha1(String),
     /// Go checksum database `h1:` hash of the module zip.
     GoH1(String),
@@ -99,27 +143,56 @@ pub enum Digest {
 /// A package version whose sources can be fetched.
 #[derive(Debug, Clone)]
 pub struct Release {
+    /// The package version; `archive_sha256` is filled once downloaded.
     pub package: PackageInfo,
+    /// Format of the source archive.
     pub archive_kind: archive::ArchiveKind,
     /// Leading path components to drop from archive entries
     /// (`name-1.0/` of an sdist, `module@version/` of a Go module).
     pub strip_components: usize,
+    /// Digest to check the downloaded archive against.
     pub digest: Option<Digest>,
 }
 
 /// What happened to one package.
 #[derive(Debug)]
 pub enum Outcome {
+    /// Fetched and indexed.
     Indexed {
+        /// The indexed package version.
         package: PackageInfo,
+        /// What was stored.
         summary: IndexSummary,
         /// Source files that could not be parsed.
         failed_files: usize,
     },
     /// Already indexed; nothing fetched but metadata.
-    Skipped { package: PackageInfo },
+    Skipped {
+        /// The package version found in the database.
+        package: PackageInfo,
+    },
 }
 
+/// Fetches packages and indexes them into a database.
+///
+/// # Examples
+///
+/// ```no_run
+/// use std::time::Duration;
+/// use pelicode_core::Config;
+/// use pelicode_crawl::{Client, Crawler, Ecosystem, Outcome};
+/// use pelicode_db::Database;
+///
+/// let config = Config::default();
+/// let mut db = Database::open("pelicode.db", &config)?;
+/// let client = Client::new(Some("https://example.org/about"), Duration::from_secs(1));
+/// let crawler = Crawler::new(client, config, false);
+/// match crawler.crawl(&mut db, Ecosystem::PyPI, "six@1.17.0")? {
+///     Outcome::Indexed { summary, .. } => println!("{} functions", summary.functions),
+///     Outcome::Skipped { .. } => println!("already indexed"),
+/// }
+/// # Ok::<(), pelicode_crawl::Error>(())
+/// ```
 pub struct Crawler {
     client: Client,
     config: Config,
@@ -128,6 +201,18 @@ pub struct Crawler {
 
 impl Crawler {
     /// `force` re-indexes versions that are already in the database.
+    ///
+    /// `config` must match the database the packages are indexed into.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::time::Duration;
+    /// use pelicode_core::Config;
+    /// use pelicode_crawl::{Client, Crawler};
+    ///
+    /// let crawler = Crawler::new(Client::new(None, Duration::from_secs(1)), Config::default(), false);
+    /// ```
     pub fn new(client: Client, config: Config, force: bool) -> Crawler {
         Crawler {
             client,
@@ -136,13 +221,38 @@ impl Crawler {
         }
     }
 
+    /// The HTTP client, to make other requests with the same pacing.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use std::time::Duration;
+    /// use pelicode_core::Config;
+    /// use pelicode_crawl::{Client, Crawler, pypi};
+    ///
+    /// let crawler = Crawler::new(Client::new(None, Duration::from_secs(1)), Config::default(), false);
+    /// let top = pypi::top_packages(crawler.client(), 10)?;
+    /// # Ok::<(), pelicode_crawl::Error>(())
+    /// ```
     pub fn client(&self) -> &Client {
         &self.client
     }
 
-    /// Fetches and indexes one package. `spec` is `name[@version]` for PyPI
-    /// and `groupId:artifactId[:version]` (or `...@version`) for Maven.
-    /// Failures after the version is known are recorded in the database.
+    /// Fetches and indexes one package. `spec` is `NAME[@VERSION]` for PyPI,
+    /// RubyGems and crates.io, `GROUP:ARTIFACT[:VERSION]` (or `...@VERSION`)
+    /// for Maven, and `MODULE[@VERSION]` for Go; without a version, the latest
+    /// release is fetched. Failures after the version is known are recorded in
+    /// the database.
+    ///
+    /// # Errors
+    ///
+    /// The errors of the repository adapter (unknown package, network failure,
+    /// invalid metadata), [`Error::DigestMismatch`], [`Error::Archive`], and the
+    /// errors of the database.
+    ///
+    /// # Examples
+    ///
+    /// See [`Crawler`].
     pub fn crawl(
         &self,
         db: &mut Database,

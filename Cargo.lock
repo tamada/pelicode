@@ -619,6 +619,7 @@ dependencies = [
  "rayon",
  "serde",
  "sha2",
+ "tempfile",
  "thiserror",
  "tree-sitter",
  "tree-sitter-go",

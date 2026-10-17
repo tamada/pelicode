@@ -37,6 +37,10 @@ format:
 clippy:
     cargo clippy --locked --workspace --all-targets -- -D warnings
 
+# Build the API documentation, failing on warnings such as broken links.
+doc:
+    RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --workspace --document-private-items
+
 # Check that every crate can be packaged for crates.io, without publishing.
 publish_check:
     cargo publish --locked --workspace --dry-run

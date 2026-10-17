@@ -7,6 +7,7 @@ use crate::http::Client;
 use crate::{Digest, Error, Release};
 use pelicode_db::PackageInfo;
 
+/// Name of PyPI in the database.
 pub const ECOSYSTEM: &str = "pypi";
 
 const API: &str = "https://pypi.org/pypi";
@@ -15,6 +16,14 @@ const TOP_PACKAGES: &str = "https://hugovk.github.io/top-pypi-packages/top-pypi-
 const METADATA_LIMIT: u64 = 64 * 1024 * 1024;
 
 /// PEP 503 normalized name.
+///
+/// # Examples
+///
+/// ```
+/// use pelicode_crawl::pypi::normalize;
+///
+/// assert_eq!(normalize("Typing_Extensions"), "typing-extensions");
+/// ```
 pub fn normalize(name: &str) -> String {
     let mut out = String::with_capacity(name.len());
     let mut separator = false;
@@ -33,6 +42,23 @@ pub fn normalize(name: &str) -> String {
 }
 
 /// The release `version` of `name`, or its latest release.
+///
+/// # Errors
+///
+/// [`Error::NotFound`] when the project or release does not exist,
+/// [`Error::NoSources`] when it has no sdist or wheel, [`Error::Metadata`] when
+/// the response cannot be understood, and [`Error::Http`] for network failures.
+///
+/// # Examples
+///
+/// ```no_run
+/// use std::time::Duration;
+/// use pelicode_crawl::{Client, pypi};
+///
+/// let client = Client::new(Some("https://example.org/about"), Duration::from_secs(1));
+/// let release = pypi::resolve(&client, "requests", None)?;
+/// # Ok::<(), pelicode_crawl::Error>(())
+/// ```
 pub fn resolve(client: &Client, name: &str, version: Option<&str>) -> Result<Release, Error> {
     let url = match version {
         Some(v) => format!("{API}/{name}/{v}/json"),
@@ -45,6 +71,25 @@ pub fn resolve(client: &Client, name: &str, version: Option<&str>) -> Result<Rel
 }
 
 /// The `n` most downloaded projects of the last 30 days.
+///
+/// The ranking is [hugovk/top-pypi-packages](https://github.com/hugovk/top-pypi-packages),
+/// not a service of PyPI.
+///
+/// # Errors
+///
+/// [`Error::Metadata`] when the response cannot be understood, and [`Error::Http`]
+/// for network failures.
+///
+/// # Examples
+///
+/// ```no_run
+/// use std::time::Duration;
+/// use pelicode_crawl::{Client, pypi};
+///
+/// let client = Client::new(Some("https://example.org/about"), Duration::from_secs(1));
+/// let top = pypi::top_packages(&client, 100)?;
+/// # Ok::<(), pelicode_crawl::Error>(())
+/// ```
 pub fn top_packages(client: &Client, n: usize) -> Result<Vec<String>, Error> {
     let response = client.get(TOP_PACKAGES, METADATA_LIMIT)?;
     let json: Value = serde_json::from_slice(&response.body)
@@ -60,6 +105,28 @@ pub fn top_packages(client: &Client, n: usize) -> Result<Vec<String>, Error> {
         .collect())
 }
 
+/// A release from the response of the JSON API, preferring the sdist to wheels.
+///
+/// # Errors
+///
+/// [`Error::Metadata`] when the name or version is missing, and
+/// [`Error::NoSources`] when there is neither an sdist nor a wheel.
+///
+/// # Examples
+///
+/// ```
+/// use pelicode_crawl::pypi::parse_release;
+///
+/// let json = serde_json::json!({
+///     "info": {"name": "Demo_Pkg", "version": "1.0", "license_expression": "MIT"},
+///     "urls": [{"packagetype": "sdist", "filename": "demo_pkg-1.0.tar.gz",
+///               "url": "https://files.example/demo_pkg-1.0.tar.gz", "digests": {"sha256": "ab"}}]
+/// });
+/// let release = parse_release(&json).unwrap();
+/// assert_eq!(release.package.name, "demo-pkg");
+/// assert_eq!(release.package.license_spdx.as_deref(), Some("MIT"));
+/// assert_eq!(release.strip_components, 1);
+/// ```
 pub fn parse_release(json: &Value) -> Result<Release, Error> {
     let info = &json["info"];
     let name = info["name"]

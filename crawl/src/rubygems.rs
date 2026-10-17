@@ -7,11 +7,30 @@ use crate::http::Client;
 use crate::{Digest, Error, Release};
 use pelicode_db::PackageInfo;
 
+/// Name of RubyGems in the database.
 pub const ECOSYSTEM: &str = "rubygems";
 
 const API: &str = "https://rubygems.org/api";
 const METADATA_LIMIT: u64 = 16 * 1024 * 1024;
 
+/// The release `version` of the gem `name`, or its latest release.
+///
+/// # Errors
+///
+/// [`Error::NotFound`] when the gem or version does not exist,
+/// [`Error::InvalidPackage`] for an invalid name, [`Error::Metadata`] when the
+/// response cannot be understood, and [`Error::Http`] for network failures.
+///
+/// # Examples
+///
+/// ```no_run
+/// use std::time::Duration;
+/// use pelicode_crawl::{Client, rubygems};
+///
+/// let client = Client::new(Some("https://example.org/about"), Duration::from_secs(1));
+/// let release = rubygems::resolve(&client, "rack", Some("3.1.8"))?;
+/// # Ok::<(), pelicode_crawl::Error>(())
+/// ```
 pub fn resolve(client: &Client, name: &str, version: Option<&str>) -> Result<Release, Error> {
     if name.is_empty() || name.contains('/') {
         return Err(Error::InvalidPackage(name.into()));
@@ -25,6 +44,26 @@ pub fn resolve(client: &Client, name: &str, version: Option<&str>) -> Result<Rel
     parse_release(&json)
 }
 
+/// A release from the response of the RubyGems API.
+///
+/// # Errors
+///
+/// [`Error::Metadata`] when the name or version is missing, and
+/// [`Error::NoSources`] when the version is yanked.
+///
+/// # Examples
+///
+/// ```
+/// use pelicode_crawl::rubygems::parse_release;
+///
+/// let json = serde_json::json!({
+///     "name": "rack", "version": "3.1.8", "platform": "ruby",
+///     "licenses": ["MIT"], "sha": "d3fb", "source_code_uri": "https://github.com/rack/rack"
+/// });
+/// let release = parse_release(&json).unwrap();
+/// assert_eq!(release.package.archive_url.as_deref(), Some("https://rubygems.org/gems/rack-3.1.8.gem"));
+/// assert_eq!(release.package.license_spdx.as_deref(), Some("MIT"));
+/// ```
 pub fn parse_release(json: &Value) -> Result<Release, Error> {
     let field = |key: &str| {
         json[key]
