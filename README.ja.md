@@ -269,6 +269,8 @@ cargo clippy --all-targets
 just --list      # CI が実行するタスクの一覧（https://just.systems/ を使います）
 ```
 
+開発の進め方、言語やパッケージリポジトリの追加方法、ハッシュと DB のバージョンを上げる条件は [CONTRIBUTING.ja.md](CONTRIBUTING.ja.md) を参照してください。
+
 ## 未実装のもの
 
 - 新しく公開されたバージョンの自動検知（現状は、パッケージ名・一覧ファイル・上位 N 件で指定します）
