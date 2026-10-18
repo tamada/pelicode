@@ -29,10 +29,6 @@ brew install tamada/tap/pelicode
 
 This taps [tamada/homebrew-tap](https://github.com/tamada/homebrew-tap) and installs the `pelicode` command.
 
-{{< alert icon="circle-info" >}}
-The formula is published together with the first release of pelicode. Until then, install it with Cargo or from source.
-{{< /alert >}}
-
 To upgrade or remove it later:
 
 ```sh
@@ -50,15 +46,11 @@ cargo install pelicode-cli
 
 This builds the [`pelicode-cli`](https://crates.io/crates/pelicode-cli) crate from crates.io and installs the `pelicode` command into Cargo's binary directory (usually `~/.cargo/bin`, which should be in your `PATH`).
 
-{{< alert icon="circle-info" >}}
-The crates are published to crates.io with the first release. Until then, install from the repository:
+To install the latest commit of the repository instead:
 
 ```sh
 cargo install --git https://github.com/tamada/pelicode pelicode-cli
 ```
-
-Add `--tag vX.Y.Z` to install a specific release instead of the latest commit.
-{{< /alert >}}
 
 To remove it later:
 
@@ -82,10 +74,6 @@ docker run --rm -v "$PWD":/workdir quay.io/tama5/pelicode scan --git main..HEAD
 ```
 
 The command runs as an unprivileged user (UID 1000). On Linux, if that user cannot write the database into the mounted directory, run it as yourself with `--user "$(id -u):$(id -g)"`.
-
-{{< alert icon="circle-info" >}}
-The image is published together with the first release of pelicode.
-{{< /alert >}}
 
 ---
 

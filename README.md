@@ -65,7 +65,7 @@ cargo install pelicode-cli
 docker run --rm -v "$PWD":/workdir quay.io/tama5/pelicode --help
 ```
 
-The Homebrew formula, the crates and the container image are published with the first release. Until then, build from source:
+Archives for Linux, macOS and Windows (x64 and arm64) are attached to each [release](https://github.com/tamada/pelicode/releases). To build from source:
 
 ```bash
 cargo install --path cli
