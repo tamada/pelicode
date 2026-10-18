@@ -87,8 +87,3 @@ snapshot_push file name:
         --artifact-type application/vnd.pelicode.snapshot.v1 \
         "{{snapshot_repository}}:{{name}}-$(date -u +%Y%m%d),{{name}}-latest" \
         "$(basename "{{file}}").zst:{{snapshot_media_type}}"
-
-# Pull a snapshot from quay.io (TAG such as pypi-latest) and decompress it into FILE
-snapshot_pull tag file:
-    tmp="$(mktemp -d)" && oras pull "{{snapshot_repository}}:{{tag}}" -o "$tmp" \
-        && zstd -d --force "$tmp"/*.zst -o "{{file}}" && rm -r "$tmp"

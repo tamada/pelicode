@@ -12,7 +12,8 @@ use crate::settings::Loaded;
 
 #[derive(Args)]
 pub struct StatsArgs {
-    /// Database file [default: `database` of the settings file, else pelicode.db].
+    /// Database file, or a snapshot as oci://REGISTRY/REPOSITORY:TAG [default: `database` of
+    /// the settings file, else pelicode.db].
     #[arg(long)]
     db: Option<PathBuf>,
     /// Rebuild the per-hash package counts first.
@@ -38,7 +39,7 @@ pub struct StatsArgs {
 
 /// Runs `pelicode stats`, refreshing the hash statistics first with `--refresh`.
 pub fn run(args: StatsArgs, settings: Option<&Loaded>) -> Result<()> {
-    let db_path = crate::database(&args.db, settings);
+    let db_path = crate::oci::resolve(&crate::database(&args.db, settings))?;
     if !db_path.exists() {
         bail!("{}: no such database", db_path.display());
     }

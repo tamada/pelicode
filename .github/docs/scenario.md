@@ -96,7 +96,8 @@ Scenarios 1 to 3 need a reference database of published code, and building one i
 | Updating the hash statistics incrementally, instead of recounting everything | Done |
 | Detecting newly published versions (crates.io RSS, PyPI updates, ...) | Not yet |
 | Creating snapshots and publishing them in quay.io (`pelicode snapshot`, `just snapshot_push`) | Done |
-| Fetching a snapshot from `scan` or the GitHub Action | Not yet (`just snapshot_pull` by hand) |
+| Fetching a snapshot from `scan` (`--db oci://...`, `pelicode pull`) | Done |
+| Using a snapshot from the settings file and the GitHub Action | Not yet (#25) |
 | Removing data no longer referenced, and compacting the database | Done (`pelicode clean`) |
 
 ## Summary
