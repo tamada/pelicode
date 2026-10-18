@@ -531,6 +531,24 @@ A command that runs evaluation experiments (`pelicode eval`) is not implemented 
 
 **Checking pelicode itself**: with the crates pelicode depends on and the 30 most downloaded crates (48 crates, about 40,000 functions) as the database, the 457 Rust functions of pelicode were checked. With the default settings there were no candidates; at a threshold of 0.3, only boilerplate `match` expressions of `FromStr::from_str` were weakly similar (about 0.4). A function of httpdate copied with renamed identifiers and without comments was found as an exact N1 match.
 
+### 11.3 Scale
+
+The monthly `snapshot` workflow was run on 2026-10-18 on a GitHub-hosted runner (`ubuntu-latest`, 4 cores), with the 500 most downloaded packages of PyPI and crates.io and the lists of `.github/snapshots/` for the others. Every package was indexed; none failed.
+
+| Ecosystem | Packages | Files | Functions | With fingerprints | Crawl | Snapshot | Compressed | Push |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| PyPI | 500 | 77,610 | 1,316,180 | 640,152 | 39 min | 3,541 MB | 952 MB | 14 min |
+| crates.io | 500 | 15,104 | 424,854 | 226,383 | 20 min | 1,163 MB | 239 MB | 2.5 min |
+| Maven Central | 42 | 12,604 | 164,933 | 42,168 | 3.5 min | 221 MB | 71 MB | 0.6 min |
+| Go | 40 | 6,714 | 107,741 | 46,546 | 2.5 min | 275 MB | 75 MB | 0.7 min |
+| RubyGems | 42 | 3,784 | 53,346 | 8,584 | 1.4 min | 48 MB | 16 MB | 0.2 min |
+
+- **Size**: a snapshot takes about 2.7 KB per function (PyPI and crates.io), and zstd (`-19`) reduces it to between a quarter and a third. The crawl includes `stats --refresh`; writing the PyPI snapshot took 4.5 minutes, most of it compressing.
+- **Pace**: a crawl takes about 4.7 s per PyPI package and 2.4 s per crate, at one request per second; downloading and indexing dominate, not the pacing.
+- **Disk**: the runner used at most 4 GB of the about 100 GB free, so ten times as many packages would still fit; the limit of 6 hours per job comes first (about 4,500 PyPI packages at this pace).
+- **Checking**: fetching the PyPI snapshot from quay.io (`--db oci://...`, 952 MB, verified and decompressed) took 2.5 minutes on a home connection. Scanning pip's vendored code (3,553 functions, of which 1,433 got candidates) against it took 4.4 s the first time and 1.6 s with a warm file cache, on an Apple M-series laptop.
+- **SQLite** remains adequate at this size; the question of §12.3 stays open for tens of millions of functions.
+
 ---
 
 ## 12. Status and Future Work
@@ -572,6 +590,6 @@ A command that runs evaluation experiments (`pelicode eval`) is not implemented 
 | Default parameters | k, w, `min_tokens`, the stop threshold and the similarity threshold, to be decided by an evaluation at a larger scale. |
 | Default levels | Whether to compute fingerprints at N2 or N3 as well as N1, and whether to keep the names of built-in APIs out of the abstraction. |
 | Unit of comparison | Whether to add units below functions (blocks, subtrees) or above them (classes, files); subtree hashes for partial reuse. |
-| Scale | About 200 MB for 25 packages. Size, counting time and search time for thousands of packages and more; PostgreSQL or a key-value store if needed. |
+| Scale | Measured up to 500 packages per ecosystem (1.3 million PyPI functions, §11.3). Tens of millions of functions remain to be tried; PostgreSQL or a key-value store if SQLite falls short. |
 | Distribution | GitHub Releases, an OCI registry, or a server of its own. |
 | More languages | JavaScript/TypeScript (minified code), C/C++ (preprocessor), C# (NuGet packages without sources). |
