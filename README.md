@@ -116,7 +116,7 @@ The first line is the location and name of the checked function. Each following 
 | `pelicode export` | List the functions stored in the database |
 | `pelicode languages` | Show the supported languages and extensions |
 
-Every command that uses a database takes `--db <FILE>` (default: `pelicode.db`). Run `pelicode <COMMAND> --help` for all options.
+Every command that uses a database takes `--db <FILE>` (default: `pelicode.db`); `scan` takes several, such as `--db pypi.db --db crates.db`. Run `pelicode <COMMAND> --help` for all options.
 
 ### crawl: fetching published packages
 
@@ -276,7 +276,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow, adding a la
 ## Not implemented yet
 
 - Automatic detection of newly published versions (packages are currently given by name, by a list file or as the top N)
-- Using published snapshots from the settings file and the GitHub Action, checking against several databases at once, and a command for evaluation experiments (`pelicode eval`)
+- Using published snapshots from the GitHub Action, and a command for evaluation experiments (`pelicode eval`)
 - Fetching the most downloaded packages of Go, Maven Central and RubyGems
 
 ## License

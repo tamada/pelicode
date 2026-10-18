@@ -113,6 +113,10 @@ pub struct Candidate {
     pub occurrences: Vec<Occurrence>,
     /// Number of places the stored function was found, excluded packages aside.
     pub occurrence_count: usize,
+    /// Position of the database of the candidate in the detectors given to
+    /// [`detect_all`]; `function.id` is an id in that database.
+    #[serde(skip)]
+    pub database: usize,
 }
 
 /// Detection result of one checked function.
@@ -344,28 +348,7 @@ impl<'a> Detector<'a> {
         files: &[FileFeatures],
         select: impl Fn(&FileFeatures, &FunctionFeatures) -> bool,
     ) -> Result<Vec<Report>> {
-        let mut reports = Vec::new();
-        for file in files {
-            for function in &file.functions {
-                if function.token_count < self.options.min_tokens || !select(file, function) {
-                    continue;
-                }
-                let candidates = self.candidates(function)?;
-                if candidates.is_empty() {
-                    continue;
-                }
-                reports.push(Report {
-                    path: file.path.clone(),
-                    language: file.language,
-                    name: function.name.clone(),
-                    start_line: function.start_line,
-                    end_line: function.end_line,
-                    token_count: function.token_count,
-                    candidates,
-                });
-            }
-        }
-        Ok(reports)
+        detect_all(std::slice::from_ref(self), files, select)
     }
 
     /// Candidates for one function, best first.
@@ -539,6 +522,7 @@ impl<'a> Detector<'a> {
                 function: function_info,
                 occurrences,
                 occurrence_count,
+                database: 0,
             });
         }
         candidates.sort_by(|a, b| {
@@ -570,6 +554,93 @@ struct Match {
 }
 
 /// Merges overlapping or adjacent line ranges.
+/// Checks the functions of `files` that `select` accepts against several
+/// databases at once, one detector each, and merges their candidates, best
+/// first. Each detector filters common code with the package counts of its
+/// own database. The size limits of the first detector's options apply.
+///
+/// The databases must hold features computed with the same parameters, the
+/// fingerprint levels aside (see [`Database::config_from_meta`]).
+///
+/// # Errors
+///
+/// [`Error`] when a database cannot be read.
+///
+/// # Examples
+///
+/// ```
+/// use pelicode_core::{Config, Language, extract_bytes};
+/// use pelicode_db::{Database, PackageInfo};
+/// use pelicode_detect::{Detector, Options, detect_all};
+///
+/// let dir = tempfile::tempdir().unwrap();
+/// let config = Config { min_tokens: 0, ..Config::default() };
+/// let source = b"def total(xs):\n    s = 0\n    for x in xs:\n        s += x * 2\n    return s\n";
+/// let file = extract_bytes("calc.py".as_ref(), Language::Python, source, &config).unwrap();
+/// let mut databases = Vec::new();
+/// for ecosystem in ["pypi", "crates"] {
+///     let mut db = Database::open(dir.path().join(format!("{ecosystem}.db")), &config).unwrap();
+///     let package = PackageInfo {
+///         ecosystem: ecosystem.into(), name: "calc".into(), version: "1.0".into(), ..PackageInfo::default()
+///     };
+///     db.index(&package, &[file.clone()]).unwrap();
+///     databases.push(db);
+/// }
+/// let options = Options { min_tokens: 0, ..Options::default() };
+/// let detectors: Vec<Detector> = databases
+///     .iter()
+///     .map(|db| Detector::new(db, options.clone()).unwrap())
+///     .collect();
+/// let reports = detect_all(&detectors, &[file], |_, _| true).unwrap();
+/// let found: Vec<_> = reports[0].candidates.iter().map(|c| c.occurrences[0].ecosystem.as_str()).collect();
+/// assert_eq!(found, ["pypi", "crates"]);
+/// ```
+pub fn detect_all(
+    detectors: &[Detector<'_>],
+    files: &[FileFeatures],
+    select: impl Fn(&FileFeatures, &FunctionFeatures) -> bool,
+) -> Result<Vec<Report>> {
+    let Some(first) = detectors.first() else {
+        return Ok(Vec::new());
+    };
+    let mut reports = Vec::new();
+    for file in files {
+        for function in &file.functions {
+            if function.token_count < first.options.min_tokens || !select(file, function) {
+                continue;
+            }
+            let mut candidates = Vec::new();
+            for (database, detector) in detectors.iter().enumerate() {
+                for mut candidate in detector.candidates(function)? {
+                    candidate.database = database;
+                    candidates.push(candidate);
+                }
+            }
+            if candidates.is_empty() {
+                continue;
+            }
+            candidates.sort_by(|a, b| {
+                b.similarity
+                    .total_cmp(&a.similarity)
+                    .then(a.kind.cmp(&b.kind))
+                    .then(a.database.cmp(&b.database))
+                    .then(a.function.id.cmp(&b.function.id))
+            });
+            candidates.truncate(first.options.max_candidates);
+            reports.push(Report {
+                path: file.path.clone(),
+                language: file.language,
+                name: function.name.clone(),
+                start_line: function.start_line,
+                end_line: function.end_line,
+                token_count: function.token_count,
+                candidates,
+            });
+        }
+    }
+    Ok(reports)
+}
+
 fn merge(ranges: impl Iterator<Item = (u32, u32)>) -> Vec<(u32, u32)> {
     let sorted: BTreeMap<u32, u32> = ranges.fold(BTreeMap::new(), |mut acc, (s, e)| {
         let end = acc.entry(s).or_insert(e);

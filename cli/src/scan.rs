@@ -9,7 +9,7 @@ use globset::GlobSet;
 use pelicode_core::{Config, Language, extract_bytes, slash_path};
 use pelicode_db::Database;
 use pelicode_detect::dependencies::Dependencies;
-use pelicode_detect::{Candidate, Detector, MatchKind, Options, Report};
+use pelicode_detect::{Candidate, Detector, MatchKind, Options, Report, detect_all};
 use serde::Serialize;
 
 use crate::git::Changes;
@@ -20,10 +20,10 @@ use crate::{extract_paths, open_output};
 pub struct ScanArgs {
     /// Files or directories to check; with --git, the repository (default: .).
     paths: Vec<PathBuf>,
-    /// Database file, or a snapshot as oci://REGISTRY/REPOSITORY:TAG [default: `database` of
-    /// the settings file, else pelicode.db].
+    /// Database file, or a snapshot as oci://REGISTRY/REPOSITORY:TAG; repeat to check against
+    /// several [default: `database` of the settings file, else pelicode.db].
     #[arg(long)]
-    db: Option<PathBuf>,
+    db: Vec<PathBuf>,
     /// Check only the functions changed in a git range (BASE, BASE..HEAD or BASE...HEAD).
     #[arg(long, value_name = "RANGE")]
     git: Option<String>,
@@ -272,16 +272,17 @@ impl std::str::FromStr for StopThreshold {
 
 /// Runs the scan; returns whether any candidate was found.
 pub fn run(args: ScanArgs, settings: Option<&Loaded>) -> Result<bool> {
-    let db_path = crate::oci::resolve(&crate::database(&args.db, settings))?;
-    if !db_path.exists() {
-        bail!("{}: no such database", db_path.display());
+    let mut databases = Vec::new();
+    for db in crate::databases(&args.db, settings) {
+        let path = crate::oci::resolve(&db)?;
+        if !path.exists() {
+            bail!("{}: no such database", path.display());
+        }
+        let opened = Database::open_unchecked(&path)?;
+        databases.push((db, opened));
     }
-    let db = Database::open_unchecked(&db_path)?;
     // Featurize the checked code exactly like the stored code.
-    let config = db.config_from_meta(&Config {
-        min_tokens: 0,
-        ..Config::default()
-    })?;
+    let config = common_config(&databases)?;
     let resolved = Resolved::new(&args, settings)?;
     let dependencies = if resolved.exclude_dependencies {
         dependencies_of(&args)
@@ -289,23 +290,33 @@ pub fn run(args: ScanArgs, settings: Option<&Loaded>) -> Result<bool> {
         Dependencies::default()
     };
     let dependency_files = dependencies.files.clone();
-    let options = Options {
-        stop_packages: resolved.stop_packages.resolve(db.package_count()?),
-        dependencies,
-        ..resolved.options.clone()
-    };
-    if options.stop_packages > 0 || options.idf {
-        let info = db.hash_stats_info()?;
-        if info.updated_at.is_none() {
-            eprintln!(
-                "warning: hash statistics were never computed; common code is not filtered \
-                 (run `pelicode stats --refresh`)"
-            );
-        } else if info.stale {
-            eprintln!("warning: hash statistics are out of date (run `pelicode stats --refresh`)");
+    let mut detectors = Vec::new();
+    for (name, db) in &databases {
+        let options = Options {
+            stop_packages: resolved.stop_packages.resolve(db.package_count()?),
+            dependencies: dependencies.clone(),
+            ..resolved.options.clone()
+        };
+        if options.stop_packages > 0 || options.idf {
+            let info = db.hash_stats_info()?;
+            let prefix = if databases.len() > 1 {
+                format!("{}: ", name.display())
+            } else {
+                String::new()
+            };
+            if info.updated_at.is_none() {
+                eprintln!(
+                    "warning: {prefix}hash statistics were never computed; common code is not \
+                     filtered (run `pelicode stats --refresh`)"
+                );
+            } else if info.stale {
+                eprintln!(
+                    "warning: {prefix}hash statistics are out of date (run `pelicode stats --refresh`)"
+                );
+            }
         }
+        detectors.push(Detector::new(db, options)?);
     }
-    let detector = Detector::new(&db, options)?;
 
     let reports = match &args.git {
         Some(range) => {
@@ -329,7 +340,7 @@ pub fn run(args: ScanArgs, settings: Option<&Loaded>) -> Result<bool> {
                         .with_context(|| format!("cannot extract {}", path.display()))?,
                 );
             }
-            detector.detect(&files, |file, f| {
+            detect_all(&detectors, &files, |file, f| {
                 changes.touches(&file.path, f.start_line, f.end_line)
             })?
         }
@@ -339,11 +350,14 @@ pub fn run(args: ScanArgs, settings: Option<&Loaded>) -> Result<bool> {
             }
             let mut files = extract_paths(&args.paths, &config)?;
             files.retain(|f| resolved.accepts(&f.path, f.language));
-            detector.detect(&files, |_, _| true)?
+            detect_all(&detectors, &files, |_, _| true)?
         }
     };
 
-    let excluded = detector.excluded_as_dependencies();
+    let excluded: usize = detectors
+        .iter()
+        .map(Detector::excluded_as_dependencies)
+        .sum();
     if excluded > 0 {
         let mut files: Vec<String> = dependency_files
             .iter()
@@ -371,6 +385,55 @@ pub fn run(args: ScanArgs, settings: Option<&Loaded>) -> Result<bool> {
     }
     out.flush()?;
     Ok(resolved.fail_on_match && !reports.is_empty())
+}
+
+/// The parameters to featurize the checked code with: those of the databases,
+/// which must agree, with the fingerprint levels of all of them.
+fn common_config(databases: &[(PathBuf, Database)]) -> Result<Config> {
+    let base = Config {
+        min_tokens: 0,
+        ..Config::default()
+    };
+    let mut config: Option<(Config, &Path)> = None;
+    for (name, db) in databases {
+        let this = db.config_from_meta(&base)?;
+        let Some((first, first_name)) = &mut config else {
+            config = Some((this, name));
+            continue;
+        };
+        let differs = [
+            (
+                "ident_mode",
+                first.ident_mode.to_string(),
+                this.ident_mode.to_string(),
+            ),
+            ("kgram", first.kgram.to_string(), this.kgram.to_string()),
+            ("window", first.window.to_string(), this.window.to_string()),
+            (
+                "minhash_size",
+                first.minhash_size.to_string(),
+                this.minhash_size.to_string(),
+            ),
+            ("bands", first.bands.to_string(), this.bands.to_string()),
+        ]
+        .into_iter()
+        .find(|(_, a, b)| a != b);
+        if let Some((key, a, b)) = differs {
+            bail!(
+                "{} and {} were built with different parameters ({key} = {a} and {b}); \
+                 they cannot be checked against at once",
+                first_name.display(),
+                name.display()
+            );
+        }
+        for level in this.fingerprint_levels {
+            if !first.fingerprint_levels.contains(&level) {
+                first.fingerprint_levels.push(level);
+            }
+        }
+        first.fingerprint_levels.sort();
+    }
+    Ok(config.expect("at least one database").0)
 }
 
 /// `exact(N1)`, `similar(N1)` and so on.

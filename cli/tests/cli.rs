@@ -539,3 +539,86 @@ fn snapshot_for_checking_only() {
     assert!(!index.status.success());
     assert!(String::from_utf8_lossy(&index.stderr).contains("snapshot"));
 }
+
+#[test]
+fn several_databases_at_once() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = |name: &str| dir.path().join(name).to_string_lossy().into_owned();
+    let (pypi, maven, other) = (path("pypi.db"), path("maven.db"), path("other.db"));
+    let lib = format!("{FIXTURE}/lib");
+    let src = format!("{FIXTURE}/src");
+    for (dir, db, ecosystem) in [(&lib, &pypi, "pypi"), (&src, &maven, "maven")] {
+        pelicode(&[
+            "index",
+            dir,
+            "--db",
+            db,
+            "--ecosystem",
+            ecosystem,
+            "--name",
+            "demo",
+            "--min-tokens",
+            "10",
+        ]);
+    }
+
+    let ecosystems = |output: &std::process::Output| {
+        let reports: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        let mut found: Vec<String> = reports
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|r| r["candidates"].as_array().unwrap())
+            .map(|c| {
+                c["occurrences"][0]["ecosystem"]
+                    .as_str()
+                    .unwrap()
+                    .to_string()
+            })
+            .collect();
+        found.sort();
+        found.dedup();
+        found
+    };
+    let both = pelicode_in(
+        dir.path(),
+        &[
+            "scan",
+            FIXTURE,
+            "--db",
+            &pypi,
+            "--db",
+            &maven,
+            "--min-tokens",
+            "10",
+            "-f",
+            "json",
+        ],
+    );
+    assert_eq!(ecosystems(&both), ["maven", "pypi"]);
+
+    // The same from a settings file listing both.
+    std::fs::write(
+        dir.path().join(".pelicode.yaml"),
+        "version: 1\ndatabase: [pypi.db, maven.db]\n",
+    )
+    .unwrap();
+    let configured = pelicode_in(
+        dir.path(),
+        &["scan", FIXTURE, "--min-tokens", "10", "-f", "json"],
+    );
+    assert_eq!(ecosystems(&configured), ["maven", "pypi"]);
+    // Commands working on one database ask which.
+    let stats = pelicode_in(dir.path(), &["stats"]);
+    assert!(!stats.status.success());
+    assert!(String::from_utf8_lossy(&stats.stderr).contains("--db"));
+
+    // Databases built with other parameters cannot be combined.
+    pelicode(&["index", &lib, "--db", &other, "--kgram", "7"]);
+    let mixed = pelicode_in(
+        dir.path(),
+        &["scan", FIXTURE, "--db", &pypi, "--db", &other],
+    );
+    assert!(!mixed.status.success());
+    assert!(String::from_utf8_lossy(&mixed.stderr).contains("kgram"));
+}

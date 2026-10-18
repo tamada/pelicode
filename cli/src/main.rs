@@ -293,11 +293,31 @@ fn run(cli: Cli) -> Result<()> {
     }
 }
 
-/// The database to use: `--db`, else the `database` of the settings, else `pelicode.db`.
-fn database(db: &Option<PathBuf>, settings: Option<&settings::Loaded>) -> PathBuf {
-    db.clone()
-        .or_else(|| settings.and_then(settings::Loaded::database))
-        .unwrap_or_else(|| PathBuf::from("pelicode.db"))
+/// The databases to use: `--db`, else the `database` of the settings, else `pelicode.db`.
+fn databases(db: &[PathBuf], settings: Option<&settings::Loaded>) -> Vec<PathBuf> {
+    if !db.is_empty() {
+        return db.to_vec();
+    }
+    let configured = settings
+        .map(settings::Loaded::databases)
+        .unwrap_or_default();
+    if configured.is_empty() {
+        vec![PathBuf::from("pelicode.db")]
+    } else {
+        configured
+    }
+}
+
+/// The one database to use, for commands that take a single one.
+fn database(db: &Option<PathBuf>, settings: Option<&settings::Loaded>) -> Result<PathBuf> {
+    let mut all = databases(db.as_slice(), settings);
+    if all.len() > 1 {
+        bail!(
+            "the settings file lists {} databases; give one with --db",
+            all.len()
+        );
+    }
+    Ok(all.remove(0))
 }
 
 /// Extracts every path; files that fail are reported on stderr and skipped.
@@ -336,7 +356,7 @@ fn database_size(path: &Path) -> u64 {
 
 /// `pelicode snapshot`: writes a copy of the database for checking only.
 fn snapshot(args: SnapshotArgs, settings: Option<&settings::Loaded>) -> Result<()> {
-    let db_path = database(&args.db, settings);
+    let db_path = database(&args.db, settings)?;
     if !db_path.exists() {
         bail!("{}: no such database", db_path.display());
     }
@@ -399,7 +419,7 @@ fn pull(args: PullArgs) -> Result<()> {
 
 /// `pelicode clean`: removes unreferenced files and functions, then vacuums.
 fn clean(args: CleanArgs, settings: Option<&settings::Loaded>) -> Result<()> {
-    let db_path = database(&args.db, settings);
+    let db_path = database(&args.db, settings)?;
     if !db_path.exists() {
         bail!("{}: no such database", db_path.display());
     }
@@ -447,7 +467,7 @@ fn clean(args: CleanArgs, settings: Option<&settings::Loaded>) -> Result<()> {
 /// `pelicode index`: extracts the given paths and stores them as one package version.
 fn index(args: IndexArgs, settings: Option<&settings::Loaded>) -> Result<()> {
     let config = args.features.config(false)?;
-    let db_path = database(&args.db, settings);
+    let db_path = database(&args.db, settings)?;
     let name = match &args.name {
         Some(name) => name.clone(),
         None => default_name(&args.paths[0])?,
@@ -537,7 +557,7 @@ fn extract(args: ExtractArgs) -> Result<()> {
 
 /// `pelicode export`: prints the functions stored in the database.
 fn export(args: ExportArgs, settings: Option<&settings::Loaded>) -> Result<()> {
-    let db_path = oci::resolve(&database(&args.db, settings))?;
+    let db_path = oci::resolve(&database(&args.db, settings)?)?;
     if !db_path.exists() {
         bail!("{}: no such database", db_path.display());
     }

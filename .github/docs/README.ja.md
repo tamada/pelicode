@@ -116,7 +116,7 @@ hex.go:10-44 parseID (tokens=275)
 | `pelicode export` | DB に入っている関数を一覧する |
 | `pelicode languages` | 対応言語と拡張子を表示する |
 
-どのコマンドも `--db <FILE>` で DB を指定できます（既定は `pelicode.db`）。オプションの一覧は `pelicode <COMMAND> --help` で確認できます。
+どのコマンドも `--db <FILE>` で DB を指定できます（既定は `pelicode.db`）。`scan` は `--db pypi.db --db crates.db` のように複数を指定できます。オプションの一覧は `pelicode <COMMAND> --help` で確認できます。
 
 ### crawl: 公開パッケージの取得
 
@@ -276,7 +276,7 @@ just --list      # CI が実行するタスクの一覧（https://just.systems/ 
 ## 未実装のもの
 
 - 新しく公開されたバージョンの自動検知（現状は、パッケージ名・一覧ファイル・上位 N 件で指定します）
-- 設定ファイルや GitHub Action からの公開済みスナップショットの利用、複数の DB を同時に照合すること、評価実験用のコマンド（`pelicode eval`）
+- GitHub Action からの公開済みスナップショットの利用と、評価実験用のコマンド（`pelicode eval`）
 - Go・Maven・RubyGems のダウンロード数上位の取得
 
 ## ライセンス
