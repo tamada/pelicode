@@ -307,7 +307,7 @@ For each function, candidates are gathered in stages:
 1. **Exact matches**: the exact hashes are looked up at N0, N1 and N2, in this order. A function found is an exact match (similarity 1.0) at the first level that matched. A hash whose package count reaches the stop threshold is not used at that level.
 2. **LSH**: for each level with fingerprints, the buckets of every band are looked up, and the functions found are candidates.
 3. **Similarity**: the fingerprint set of each candidate is loaded and its similarity computed as in §7.3; exact matches are left out. When a function is found at several levels, the most similar is kept.
-4. **Occurrences**: the places of each candidate are loaded, earliest publication first, and the excluded packages (`--exclude`) removed; a candidate with no place left is dropped.
+4. **Occurrences**: the places of each candidate are loaded, earliest publication first, and the excluded packages (`--exclude`) removed; a candidate with no place left is dropped. Then the dependencies of the checked code (§7.6) are removed likewise: a candidate found only in them is dropped and counted, so that `scan` can say how many were left out.
 5. **Ranking**: candidates are sorted by similarity, and the first `--max-candidates` (5 by default) reported.
 
 ### 7.3 Similarity
@@ -344,6 +344,15 @@ For each checked function: its file, name, lines and size, and its candidates. F
 
 Reports speak of "similar code candidates to review", never of plagiarism or infringement.
 
+
+### 7.6 Dependencies of the Checked Code
+
+Code that matches a library the checked project depends on is expected, so dependencies are left out by default (`--no-exclude-dependencies`, or `scan.exclude_dependencies: false`, turns this off).
+
+- **Files**: `Cargo.lock`, `go.mod`, `go.sum`, `requirements*.txt`, `poetry.lock`, `uv.lock`, `Pipfile.lock`, `Gemfile.lock`, `pom.xml` and `gradle.lockfile`.
+- **Where**: the checked directories (the repository with `--git`) and below, honoring `.gitignore`, and the files directly in each directory above them, up to the root of the git repository.
+- **Names**: as in the database: every `[[package]]` of `Cargo.lock` (the workspace's own crates included, so that their published versions are left out too), module paths of `go.mod`'s `require` and of `go.sum`, PEP 503 names for PyPI, gem names of the `GEM` specs, `groupId:artifactId` of `pom.xml`'s dependencies and of `gradle.lockfile`.
+- The parsing lives in `pelicode_detect::dependencies`, and the detector counts the candidates left out (`Detector::excluded_as_dependencies`).
 ---
 
 ## 8. Interfaces
@@ -370,7 +379,7 @@ Options used every time can be written in a settings file, in YAML or JSON5.
 - **Names**: `.pelicode.yaml`, `.pelicode.yml`, `.pelicode.json5` and `.pelicode.json` (read as JSON5).
 - **Discovery**: the current directory, then each directory above it, up to the root of the git repository (the directory holding `.git`). Several files in one directory are an error. `--config <FILE>` names a file, and `--no-config` disables settings files; both are accepted by every command.
 - **Precedence**: command line, then settings file, then built-in defaults. Lists (`--exclude`, `--exclude-path`) are merged with those of the file. Flags (`--idf`, `--fail-on-match`) can only switch a setting on.
-- **Keys**: `version` (must be 1), `database` (relative to the settings file), `scan.languages`, `scan.threshold`, `scan.min_tokens`, `scan.max_candidates`, `scan.min_shared`, `scan.stop_packages` (a number, or a percentage such as `"10%"`), `scan.idf`, `scan.fail_on_match`, `scan.exclude.packages`, `scan.exclude.paths`, `crawl.contact` and `crawl.delay_ms`. Each corresponds to the option of the same name.
+- **Keys**: `version` (must be 1), `database` (relative to the settings file), `scan.languages`, `scan.threshold`, `scan.min_tokens`, `scan.max_candidates`, `scan.min_shared`, `scan.stop_packages` (a number, or a percentage such as `"10%"`), `scan.idf`, `scan.fail_on_match`, `scan.exclude_dependencies`, `scan.exclude.packages`, `scan.exclude.paths`, `crawl.contact` and `crawl.delay_ms`. Each corresponds to the option of the same name.
 - **Validation**: unknown keys, an unsupported version, a threshold outside 0 to 1, invalid stop thresholds, package names and glob patterns are errors, reported with the file (and, for YAML, the line).
 - **Implementation**: YAML is read with serde-saphyr and JSON5 with json5, into the same serde types.
 
@@ -506,6 +515,7 @@ A command that runs evaluation experiments (`pelicode eval`) is not implemented 
 | Settings files in YAML and JSON5 | Done |
 | SARIF output | Done |
 | GitHub Action for pull requests | Done |
+| Leaving out the dependencies of the checked code | Done |
 | Database cleanup (`pelicode clean`) | Done |
 | CI, release, container, documentation site | Done (no release made yet) |
 
@@ -527,5 +537,4 @@ A command that runs evaluation experiments (`pelicode eval`) is not implemented 
 | Unit of comparison | Whether to add units below functions (blocks, subtrees) or above them (classes, files); subtree hashes for partial reuse. |
 | Scale | About 200 MB for 25 packages. Size, counting time and search time for thousands of packages and more; PostgreSQL or a key-value store if needed. |
 | Distribution | GitHub Releases, an OCI registry, or a server of its own. |
-| Dependencies | Whether matches with the packages the checked code depends on (from its lock files) should be excluded by default. |
 | More languages | JavaScript/TypeScript (minified code), C/C++ (preprocessor), C# (NuGet packages without sources). |

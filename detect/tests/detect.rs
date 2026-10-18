@@ -240,3 +240,34 @@ fn idf_still_finds_disguised_copies() {
     let c = &reports[0].candidates[0];
     assert!((0.5..=1.0).contains(&c.similarity), "{}", c.similarity);
 }
+
+#[test]
+fn leaves_out_dependencies() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut db = database(&dir);
+    // The same function in a second package that is not a dependency.
+    db.index(&package("other:copy"), &[file("Search.java", ORIGINAL)])
+        .unwrap();
+
+    let mut dependencies = pelicode_detect::dependencies::Dependencies::default();
+    dependencies.add_file(
+        "pom.xml",
+        "<project><dependencies><dependency><groupId>org.example</groupId><artifactId>search</artifactId></dependency></dependencies></project>",
+    );
+    let detector = Detector::new(
+        &db,
+        Options {
+            dependencies,
+            ..options()
+        },
+    )
+    .unwrap();
+    let reports = detector
+        .detect(&[file("Copy.java", ORIGINAL)], |_, _| true)
+        .unwrap();
+    // Found in a dependency and elsewhere: reported, without the dependency.
+    let occurrences = &reports[0].candidates[0].occurrences;
+    assert_eq!(occurrences.len(), 1);
+    assert_eq!(occurrences[0].package, "other:copy");
+    assert_eq!(detector.excluded_as_dependencies(), 0);
+}

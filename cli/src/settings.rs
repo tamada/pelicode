@@ -56,6 +56,9 @@ pub struct ScanSettings {
     pub stop_packages: Option<StopValue>,
     pub idf: Option<bool>,
     pub fail_on_match: Option<bool>,
+    /// Leave out candidates found only in the dependencies of the checked code
+    /// (true when absent).
+    pub exclude_dependencies: Option<bool>,
     #[serde(default)]
     pub exclude: Exclude,
 }

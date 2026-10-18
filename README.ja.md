@@ -178,7 +178,7 @@ pelicode scan ./src --fail-on-match              # 候補があれば終了コ�
 
 `--stop-packages` の既定値 100 は、大規模な DB を前提にしています。パッケージが数十件しかない DB では効かないので、`--stop-packages 40%` のように割合で指定してください。
 
-`--languages python,rust` で検査する言語を絞り、`--exclude-path 'vendor/**'` でパスを指定してファイルを除外できます。
+`--languages python,rust` で検査する言語を絞り、`--exclude-path 'vendor/**'` でパスを指定してファイルを除外できます。検査するコードが依存しているパッケージ（`Cargo.lock`、`go.mod`、`requirements*.txt`、`poetry.lock`、`uv.lock`、`Pipfile.lock`、`Gemfile.lock`、`pom.xml`、`gradle.lockfile` から読み取ります）にしか出現しない候補は報告しません。`--no-exclude-dependencies` を付けると、それらも報告します。
 
 ### 設定ファイル
 

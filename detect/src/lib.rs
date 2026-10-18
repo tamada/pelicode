@@ -6,13 +6,15 @@
 
 #![warn(missing_docs)]
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::PathBuf;
 
 use pelicode_core::{FileFeatures, FunctionFeatures, Language, Level};
 use pelicode_db::{Database, FunctionInfo, Occurrence};
 use serde::Serialize;
+
+pub mod dependencies;
 
 pub use pelicode_db::Error;
 
@@ -54,6 +56,10 @@ pub struct Options {
     /// Weight fingerprints by inverse document frequency, `ln(1 + N / df)`,
     /// where N is the number of packages and df those containing the fingerprint.
     pub idf: bool,
+    /// Packages the checked code depends on (see [`dependencies`]): candidates
+    /// found only in them are not reported, and their occurrences are left out
+    /// of the other candidates.
+    pub dependencies: dependencies::Dependencies,
 }
 
 impl Default for Options {
@@ -67,6 +73,7 @@ impl Default for Options {
             stop_packages: 100,
             min_shared: 5,
             idf: false,
+            dependencies: dependencies::Dependencies::default(),
         }
     }
 }
@@ -175,6 +182,8 @@ pub struct Detector<'a> {
     /// Packages in the database, the N of IDF.
     packages: usize,
     document_frequencies: RefCell<HashMap<(Level, u64), usize>>,
+    /// Candidates left out because they were found only in dependencies.
+    excluded_as_dependencies: Cell<usize>,
 }
 
 impl<'a> Detector<'a> {
@@ -202,7 +211,40 @@ impl<'a> Detector<'a> {
             options,
             packages: db.package_count()?,
             document_frequencies: RefCell::new(HashMap::new()),
+            excluded_as_dependencies: Cell::new(0),
         })
+    }
+
+    /// Number of candidates left out so far because they were found only in
+    /// [`Options::dependencies`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use pelicode_core::{Config, Language, extract_bytes};
+    /// use pelicode_db::{Database, PackageInfo};
+    /// use pelicode_detect::{Detector, Options, dependencies::Dependencies};
+    ///
+    /// let dir = tempfile::tempdir().unwrap();
+    /// let config = Config { min_tokens: 0, ..Config::default() };
+    /// let mut db = Database::open(dir.path().join("pelicode.db"), &config).unwrap();
+    /// let source = b"def total(xs):\n    s = 0\n    for x in xs:\n        s += x * 2\n    return s\n";
+    /// let file = extract_bytes("calc.py".as_ref(), Language::Python, source, &config).unwrap();
+    /// let package = PackageInfo {
+    ///     ecosystem: "pypi".into(), name: "calc".into(), version: "1.0".into(), ..PackageInfo::default()
+    /// };
+    /// db.index(&package, &[file.clone()]).unwrap();
+    ///
+    /// // The checked project depends on calc.
+    /// let mut dependencies = Dependencies::default();
+    /// dependencies.add_file("requirements.txt", "calc>=1\n");
+    /// let options = Options { min_tokens: 0, dependencies, ..Options::default() };
+    /// let detector = Detector::new(&db, options).unwrap();
+    /// assert!(detector.detect(&[file], |_, _| true).unwrap().is_empty());
+    /// assert_eq!(detector.excluded_as_dependencies(), 1);
+    /// ```
+    pub fn excluded_as_dependencies(&self) -> usize {
+        self.excluded_as_dependencies.get()
     }
 
     fn is_common(&self, package_count: usize) -> bool {
@@ -467,6 +509,12 @@ impl<'a> Detector<'a> {
             let mut occurrences = self.db.occurrences(id)?;
             occurrences.retain(|o| !self.is_excluded(o));
             if occurrences.is_empty() {
+                continue;
+            }
+            occurrences.retain(|o| !self.options.dependencies.contains(&o.ecosystem, &o.package));
+            if occurrences.is_empty() {
+                self.excluded_as_dependencies
+                    .set(self.excluded_as_dependencies.get() + 1);
                 continue;
             }
             let function_info = self.db.function_info(id)?;

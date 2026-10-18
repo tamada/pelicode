@@ -8,6 +8,7 @@ use clap::{Args, ValueEnum};
 use globset::GlobSet;
 use pelicode_core::{Config, Language, extract_bytes, slash_path};
 use pelicode_db::Database;
+use pelicode_detect::dependencies::Dependencies;
 use pelicode_detect::{Candidate, Detector, MatchKind, Options, Report};
 use serde::Serialize;
 
@@ -65,6 +66,32 @@ pub struct ScanArgs {
     /// Weight fingerprints by inverse document frequency.
     #[arg(long)]
     idf: bool,
+    /// Report candidates found only in the dependencies of the checked code too. By default,
+    /// they are left out; the dependencies come from the lock files and manifests (Cargo.lock,
+    /// go.mod, requirements*.txt, poetry.lock, uv.lock, Pipfile.lock, Gemfile.lock, pom.xml,
+    /// gradle.lockfile) in the checked directories and above, up to the repository root.
+    #[arg(long)]
+    no_exclude_dependencies: bool,
+}
+
+/// The dependencies of what `args` checks: those around the repository with
+/// `--git`, else around each path given.
+fn dependencies_of(args: &ScanArgs) -> Dependencies {
+    let roots: Vec<PathBuf> = if args.git.is_some() || args.paths.is_empty() {
+        vec![
+            args.paths
+                .first()
+                .cloned()
+                .unwrap_or_else(|| PathBuf::from(".")),
+        ]
+    } else {
+        args.paths.clone()
+    };
+    let mut dependencies = Dependencies::default();
+    for root in roots {
+        dependencies.extend(Dependencies::find_around(&root));
+    }
+    dependencies
 }
 
 /// Output formats of `scan`.
@@ -124,6 +151,7 @@ struct Resolved {
     options: Options,
     stop_packages: StopThreshold,
     fail_on_match: bool,
+    exclude_dependencies: bool,
     languages: Option<Vec<Language>>,
     exclude_paths: GlobSet,
 }
@@ -179,6 +207,8 @@ impl Resolved {
             stop_packages,
             fail_on_match: args.fail_on_match
                 || file.and_then(|f| f.fail_on_match).unwrap_or(false),
+            exclude_dependencies: !args.no_exclude_dependencies
+                && file.and_then(|f| f.exclude_dependencies).unwrap_or(true),
             languages: if args.languages.is_empty() {
                 file.and_then(|f| f.languages.clone())
             } else {
@@ -252,8 +282,15 @@ pub fn run(args: ScanArgs, settings: Option<&Loaded>) -> Result<bool> {
         ..Config::default()
     })?;
     let resolved = Resolved::new(&args, settings)?;
+    let dependencies = if resolved.exclude_dependencies {
+        dependencies_of(&args)
+    } else {
+        Dependencies::default()
+    };
+    let dependency_files = dependencies.files.clone();
     let options = Options {
         stop_packages: resolved.stop_packages.resolve(db.package_count()?),
+        dependencies,
         ..resolved.options.clone()
     };
     if options.stop_packages > 0 || options.idf {
@@ -304,6 +341,23 @@ pub fn run(args: ScanArgs, settings: Option<&Loaded>) -> Result<bool> {
             detector.detect(&files, |_, _| true)?
         }
     };
+
+    let excluded = detector.excluded_as_dependencies();
+    if excluded > 0 {
+        let mut files: Vec<String> = dependency_files
+            .iter()
+            .take(3)
+            .map(|f| f.display().to_string())
+            .collect();
+        if dependency_files.len() > 3 {
+            files.push(format!("and {} more", dependency_files.len() - 3));
+        }
+        eprintln!(
+            "note: {excluded} candidate(s) found only in dependencies of the checked code were not \
+             reported (dependencies read from {}); --no-exclude-dependencies shows them",
+            files.join(", ")
+        );
+    }
 
     let mut out = open_output(args.output.as_deref())?;
     match args.format {

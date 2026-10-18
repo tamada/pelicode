@@ -178,7 +178,7 @@ Main options:
 
 The default `--stop-packages 100` assumes a large database. With only a few dozen packages it has no effect, so give a percentage such as `--stop-packages 40%`.
 
-`--languages python,rust` checks only some languages, and `--exclude-path 'vendor/**'` leaves out files by path.
+`--languages python,rust` checks only some languages, and `--exclude-path 'vendor/**'` leaves out files by path. Candidates found only in the dependencies of the checked code (read from `Cargo.lock`, `go.mod`, `requirements*.txt`, `poetry.lock`, `uv.lock`, `Pipfile.lock`, `Gemfile.lock`, `pom.xml` and `gradle.lockfile`) are left out; `--no-exclude-dependencies` reports them too.
 
 ### Settings file
 

@@ -307,7 +307,7 @@ winnowing の性質として、w + k − 1 トークン以上の共通部分を�
 1. **完全一致**: N0、N1、N2 の順に完全ハッシュを検索する。見つかった関数は、最初に一致したレベルの完全一致（類似度 1.0）とする。そのハッシュの出現パッケージ数が除外の閾値以上なら、そのレベルの一致は採らない。
 2. **LSH**: フィンガープリントを計算したレベルごとに、すべてのバンドのバケットを検索し、一致した関数を候補とする。
 3. **類似度の計算**: 候補ごとにフィンガープリント集合を読み出し、§7.3 の類似度を計算する。完全一致した関数は除く。同じ関数が複数のレベルで見つかった場合は、類似度の高いほうを採る。
-4. **出現場所の取得**: 候補ごとに出現場所を公開日時の古い順に取得し、除外するパッケージ（`--exclude`）を取り除く。出現場所が残らない候補は捨てる。
+4. **出現場所の取得**: 候補ごとに出現場所を公開日時の古い順に取得し、除外するパッケージ（`--exclude`）を取り除く。出現場所が残らない候補は捨てる。続いて、検査するコードの依存パッケージ（§7.6）も同じように取り除く。依存パッケージにしか出現しない候補は捨て、その数を数えておく（`scan` が除外した件数を示すため）。
 5. **順位付け**: 類似度の高い順に並べ、上位 `--max-candidates`（既定 5）件を報告する。
 
 ### 7.3 類似度
@@ -344,6 +344,15 @@ getter、`equals`、定型的な例外処理のように、多くのパッケー
 
 報告の文言は「要確認の類似候補」とし、「盗用」「違反」などの断定的な表現を使わない。
 
+
+### 7.6 検査するコードの依存パッケージ
+
+検査するプロジェクトが依存しているライブラリと一致するのは当然なので、既定で除外する（`--no-exclude-dependencies`、または `scan.exclude_dependencies: false` で無効にできる）。
+
+- **読むファイル**: `Cargo.lock`、`go.mod`、`go.sum`、`requirements*.txt`、`poetry.lock`、`uv.lock`、`Pipfile.lock`、`Gemfile.lock`、`pom.xml`、`gradle.lockfile`。
+- **探す場所**: 検査するディレクトリ（`--git` ならリポジトリ）とその下（`.gitignore` に従う）、および、その上の各ディレクトリの直下（git リポジトリのルートまで）。
+- **名前**: DB の表記に合わせる。`Cargo.lock` はすべての `[[package]]`（ワークスペース自身の crate も含め、公開済みの版も除外されるようにする）、`go.mod` の `require` と `go.sum` のモジュールパス、PyPI は PEP 503 の名前、`Gemfile.lock` は `GEM` の specs の gem 名、`pom.xml` の依存と `gradle.lockfile` は `groupId:artifactId`。
+- 解析は `pelicode_detect::dependencies` にあり、Detector は除外した候補の数を数える（`Detector::excluded_as_dependencies`）。
 ---
 
 ## 8. インタフェース
@@ -370,7 +379,7 @@ getter、`equals`、定型的な例外処理のように、多くのパッケー
 - **ファイル名**: `.pelicode.yaml`、`.pelicode.yml`、`.pelicode.json5`、`.pelicode.json`（JSON5 として読む）。
 - **探し方**: カレントディレクトリから順に上のディレクトリへ、git リポジトリのルート（`.git` のあるディレクトリ）まで探す。同じディレクトリに複数あればエラーにする。`--config <FILE>` でファイルを指定でき、`--no-config` で設定ファイルを使わない。どちらも全コマンドで使える。
 - **優先順位**: コマンドライン、設定ファイル、既定値の順。リストのオプション（`--exclude`、`--exclude-path`）は設定ファイルのリストに追加する。フラグ（`--idf`、`--fail-on-match`）は有効にすることしかできない。
-- **項目**: `version`（1 でなければならない）、`database`（設定ファイルからの相対パス）、`scan.languages`、`scan.threshold`、`scan.min_tokens`、`scan.max_candidates`、`scan.min_shared`、`scan.stop_packages`（数、または `"10%"` のような割合）、`scan.idf`、`scan.fail_on_match`、`scan.exclude.packages`、`scan.exclude.paths`、`crawl.contact`、`crawl.delay_ms`。それぞれ同じ名前のオプションに対応する。
+- **項目**: `version`（1 でなければならない）、`database`（設定ファイルからの相対パス）、`scan.languages`、`scan.threshold`、`scan.min_tokens`、`scan.max_candidates`、`scan.min_shared`、`scan.stop_packages`（数、または `"10%"` のような割合）、`scan.idf`、`scan.fail_on_match`、`scan.exclude_dependencies`、`scan.exclude.packages`、`scan.exclude.paths`、`crawl.contact`、`crawl.delay_ms`。それぞれ同じ名前のオプションに対応する。
 - **検査**: 未知の項目、対応していない版、0〜1 の範囲外の閾値、不正な除外の閾値・パッケージ名・グロブパターンはエラーにし、ファイル名（YAML なら行も）を示す。
 - **実装**: YAML は serde-saphyr、JSON5 は json5 で、同じ serde の型に読み込む。
 
@@ -506,6 +515,7 @@ pelicode-core、pelicode-db、pelicode-detect、pelicode-crawl はライブラ�
 | YAML・JSON5 の設定ファイル | 実装済み |
 | SARIF 出力 | 実装済み |
 | PR を検査する GitHub Action | 実装済み |
+| 検査するコードの依存パッケージの除外 | 実装済み |
 | データベースの掃除（`pelicode clean`） | 実装済み |
 | CI、リリース、コンテナ、ドキュメントサイト | 実装済み（実際のリリースは未実施） |
 
@@ -527,5 +537,4 @@ pelicode-core、pelicode-db、pelicode-detect、pelicode-crawl はライブラ�
 | 照合の単位 | 関数未満（ブロック・部分木）や関数超（クラス・ファイル）の単位を補助的に導入するか。部分木ハッシュによる部分的な流用の検出。 |
 | 規模 | 25 パッケージで約 200 MB。数千パッケージ以上での容量、集計時間、検索時間。必要に応じて PostgreSQL や KV ストアへの分離を検討する。 |
 | DB の配布 | GitHub Releases、OCI レジストリ、専用サーバのいずれで配布するか。 |
-| 依存パッケージの扱い | 検査対象が依存しているパッケージ（ロックファイルから判定）由来の一致を、既定で除外するか。 |
 | 対象言語の拡大 | JavaScript/TypeScript（minify 済みコード）、C/C++（プリプロセッサ）、C#（ソースを含まない NuGet）への対応。 |

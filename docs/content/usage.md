@@ -192,6 +192,7 @@ pelicode scan [OPTIONS] [PATHS]...
 | `--min-shared <N>` | 5 | Shared fingerprints required for a similar match |
 | `--idf` | | Weight fingerprints by inverse document frequency |
 | `--fail-on-match` | | Exit with status 1 when any candidate is found |
+| `--no-exclude-dependencies` | | Also report candidates found only in the dependencies of the checked code |
 | `-f, --format <FORMAT>` | `text` | `text`, `json`, `csv` or `sarif` |
 | `-o, --output <FILE>` | standard output | Write the result to a file |
 
@@ -210,6 +211,14 @@ pelicode scan --git origin/main...HEAD -f sarif -o pelicode.sarif   # for GitHub
 1. **Exact matches**, comparing the hash of the whole function after N0, N1 and N2 normalization, in that order.
 2. **Candidates** from [LSH buckets](/glossary#lsh), which bring together functions with similar fingerprint sets.
 3. **Similarity** of the fingerprint sets of each candidate, after removing common fingerprints; candidates below `--threshold` or sharing fewer than `--min-shared` fingerprints are dropped.
+
+#### Dependencies are left out
+
+Code that matches a library the checked project depends on is expected, so `scan` leaves it out. The dependencies are read from `Cargo.lock`, `go.mod`, `go.sum`, `requirements*.txt`, `poetry.lock`, `uv.lock`, `Pipfile.lock`, `Gemfile.lock`, `pom.xml` and `gradle.lockfile` found in the checked directories and below, and in the directories above them up to the root of the git repository (so `scan ./src` reads the lock files at the root of the project).
+
+- A candidate found only in dependencies is not reported, and `scan` says how many were left out, on the standard error.
+- A candidate found in a dependency and elsewhere is reported, without the occurrences in the dependency.
+- `--no-exclude-dependencies`, or `exclude_dependencies: false` in the settings file, reports them all; for a license audit, it also shows code copied from dependencies into the repository.
 
 ### `extract`
 
@@ -318,6 +327,7 @@ crawl:
 | `scan.stop_packages` | `--stop-packages` | A number, or a percentage such as `"10%"` |
 | `scan.idf` | `--idf` | `true` or `false` |
 | `scan.fail_on_match` | `--fail-on-match` | `true` or `false` |
+| `scan.exclude_dependencies` | `--no-exclude-dependencies` | `false` to report candidates found only in dependencies (default `true`) |
 | `scan.exclude.packages` | `--exclude` | Packages never reported, as `ECOSYSTEM:NAME` |
 | `scan.exclude.paths` | `--exclude-path` | Glob patterns of files not checked |
 | `crawl.contact` | `--contact` | Contact added to the User-Agent |

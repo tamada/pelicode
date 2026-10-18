@@ -396,3 +396,65 @@ fn clean_removes_unreferenced_functions() {
             .all(|r| r["path"] == "stack.py")
     );
 }
+
+#[test]
+fn dependencies_are_left_out() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = db_arg(dir.path());
+    // The fixture stands for a published package the checked project depends on.
+    pelicode(&[
+        "index",
+        FIXTURE,
+        "--db",
+        &db,
+        "--ecosystem",
+        "pypi",
+        "--name",
+        "requests",
+        "--min-tokens",
+        "10",
+    ]);
+    let work = dir.path().join("work");
+    std::fs::create_dir_all(work.join("src")).unwrap();
+    std::fs::create_dir(work.join(".git")).unwrap();
+    std::fs::copy(
+        Path::new(FIXTURE).join("lib/stack.py"),
+        work.join("src/stack.py"),
+    )
+    .unwrap();
+    // At the root of the project, above the directory checked.
+    std::fs::write(work.join("requirements.txt"), "Requests==2.32.3\n").unwrap();
+
+    let src = work.join("src").to_string_lossy().into_owned();
+    let run = |extra: &[&str]| {
+        let mut args = vec![
+            "scan",
+            src.as_str(),
+            "--db",
+            &db,
+            "--min-tokens",
+            "10",
+            "-f",
+            "json",
+            "--no-config",
+        ];
+        args.extend_from_slice(extra);
+        Command::new(env!("CARGO_BIN_EXE_pelicode"))
+            .args(&args)
+            .output()
+            .unwrap()
+    };
+    let output = run(&[]);
+    assert!(output.status.success());
+    let reports: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(reports, serde_json::json!([]));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("found only in dependencies") && stderr.contains("requirements.txt"),
+        "{stderr}"
+    );
+
+    let output = run(&["--no-exclude-dependencies"]);
+    let reports: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(!reports.as_array().unwrap().is_empty());
+}

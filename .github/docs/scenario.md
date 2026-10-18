@@ -51,7 +51,7 @@ pelicode scan . --db pelicode.db -f csv -o review.csv
 
 - **Who**: release managers, and those in charge of open source compliance.
 - **What it finds**: code copied into the repository without being declared as a dependency (vendored libraries, snippets), together with the license that may require attribution. A preliminary run over the 25 most downloaded PyPI packages already showed such copies, such as six bundled into other packages.
-- **Works today**: everything above; `-f json` gives the full detail, including all the places a function was found.
+- **Works today**: everything above; `-f json` gives the full detail, including all the places a function was found. Candidates found only in the dependencies of the repository are left out by default; add `--no-exclude-dependencies` to also see code copied from dependencies into the repository.
 
 ## 4. Comparing code within an organization
 
