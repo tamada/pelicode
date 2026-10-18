@@ -8,6 +8,9 @@ on:
 jobs:
   version-up:
     runs-on: ubuntu-latest
+    # The job pushes the version bump to the release branch.
+    permissions:
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v7
