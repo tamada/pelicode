@@ -50,6 +50,10 @@ pub type Result<T> = std::result::Result<T, Error>;
 /// Version of the table layout; databases with another version are rejected.
 pub const SCHEMA_VERSION: u32 = 5;
 
+/// Oldest version of the table layout that is upgraded on open; older ones
+/// are rejected.
+pub const OLDEST_SCHEMA_VERSION: u32 = 4;
+
 const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS meta (
     key   TEXT PRIMARY KEY,
@@ -728,6 +732,39 @@ impl Database {
             functions: count("function")?,
             indexed_functions: indexed as usize,
         })
+    }
+
+    /// Names of the ecosystems that have packages, sorted.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Sqlite`] when the database cannot be read.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use pelicode_core::{Config, Language, extract_bytes};
+    /// use pelicode_db::{Database, PackageInfo};
+    ///
+    /// let dir = tempfile::tempdir().unwrap();
+    /// let config = Config::default();
+    /// let mut db = Database::open(dir.path().join("pelicode.db"), &config).unwrap();
+    /// let file = extract_bytes("a.py".as_ref(), Language::Python, b"def f():\n    return 1\n", &config).unwrap();
+    /// for ecosystem in ["pypi", "crates"] {
+    ///     let package = PackageInfo {
+    ///         ecosystem: ecosystem.into(), name: "demo".into(), version: "1".into(), ..PackageInfo::default()
+    ///     };
+    ///     db.index(&package, &[file.clone()]).unwrap();
+    /// }
+    /// assert_eq!(db.ecosystems().unwrap(), ["crates", "pypi"]);
+    /// ```
+    pub fn ecosystems(&self) -> Result<Vec<String>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT name FROM ecosystem
+             WHERE id IN (SELECT ecosystem_id FROM package) ORDER BY name",
+        )?;
+        let names = stmt.query_map([], |r| r.get(0))?;
+        Ok(names.collect::<rusqlite::Result<_>>()?)
     }
 
     /// Every occurrence of every stored function, ordered by package and location.

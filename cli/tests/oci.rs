@@ -32,6 +32,14 @@ struct Registry {
 
 impl Registry {
     fn start(layer: Vec<u8>, digest: String) -> Registry {
+        Registry::with_annotations(layer, digest, serde_json::json!({}))
+    }
+
+    fn with_annotations(
+        layer: Vec<u8>,
+        digest: String,
+        annotations: serde_json::Value,
+    ) -> Registry {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let address = listener.local_addr().unwrap().to_string();
         let downloads = Arc::new(AtomicUsize::new(0));
@@ -40,7 +48,7 @@ impl Registry {
         thread::spawn(move || {
             for stream in listener.incoming() {
                 let Ok(stream) = stream else { break };
-                respond(stream, &layer, &digest, &realm, &counter);
+                respond(stream, &layer, &digest, &annotations, &realm, &counter);
             }
         });
         Registry { address, downloads }
@@ -55,6 +63,7 @@ fn respond(
     mut stream: TcpStream,
     layer: &[u8],
     digest: &str,
+    annotations: &serde_json::Value,
     realm: &str,
     downloads: &AtomicUsize,
 ) {
@@ -77,6 +86,7 @@ fn respond(
         "mediaType": "application/vnd.oci.image.manifest.v1+json",
         "artifactType": "application/vnd.pelicode.snapshot.v1",
         "layers": [{ "mediaType": MEDIA_TYPE, "digest": digest, "size": layer.len() }],
+        "annotations": annotations,
     })
     .to_string();
     let (status, extra, body): (&str, String, Vec<u8>) = if path.starts_with("/v2/auth") {
@@ -104,13 +114,23 @@ fn respond(
     let _ = stream.write_all(&body);
 }
 
-/// A snapshot of the fixture, compressed, with its digest.
+/// A snapshot of the fixture, compressed, with its digest; its annotations
+/// are in `snapshot.json` of `dir`.
 fn snapshot(dir: &Path) -> (Vec<u8>, String) {
     let db = dir.join("ref.db").to_string_lossy().into_owned();
     let out = dir.join("snapshot.db").to_string_lossy().into_owned();
+    let annotations = dir.join("snapshot.json").to_string_lossy().into_owned();
     for args in [
         vec!["index", FIXTURE, "--db", &db, "--min-tokens", "10"],
-        vec!["snapshot", "--db", &db, "-o", &out],
+        vec![
+            "snapshot",
+            "--db",
+            &db,
+            "-o",
+            &out,
+            "--annotations",
+            &annotations,
+        ],
     ] {
         let output = run(dir, &args);
         assert!(
@@ -244,5 +264,68 @@ fn copy_dir(from: &Path, to: &Path) {
         } else {
             std::fs::copy(entry.path(), target).unwrap();
         }
+    }
+}
+
+fn annotations_of(dir: &Path) -> serde_json::Value {
+    let file: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.join("snapshot.json")).unwrap()).unwrap();
+    file["$manifest"].clone()
+}
+
+#[test]
+fn shows_annotations_without_downloading() {
+    let dir = tempfile::tempdir().unwrap();
+    let cache = dir.path().join("cache");
+    let (layer, digest) = snapshot(dir.path());
+    let annotations = annotations_of(dir.path());
+    let prefix = "io.github.tamada.pelicode.";
+    assert_eq!(annotations[format!("{prefix}ecosystems")], "local");
+    assert_eq!(annotations[format!("{prefix}kgram")], "10");
+    assert!(annotations["org.opencontainers.image.created"].is_string());
+
+    let registry = Registry::with_annotations(layer, digest.clone(), annotations);
+    let info = run(
+        &cache,
+        &["pull", &registry.reference(), "--info", "-f", "json"],
+    );
+    assert!(
+        info.status.success(),
+        "{}",
+        String::from_utf8_lossy(&info.stderr)
+    );
+    let info: serde_json::Value = serde_json::from_slice(&info.stdout).unwrap();
+    assert_eq!(info["digest"], digest.as_str());
+    assert_eq!(info["annotations"][format!("{prefix}packages")], "1");
+    let text = run(&cache, &["pull", &registry.reference(), "--info"]);
+    assert!(String::from_utf8_lossy(&text.stdout).contains("  normalizer-version: "));
+    assert_eq!(registry.downloads.load(Ordering::SeqCst), 0);
+
+    // Compatible annotations do not stop the download.
+    assert!(
+        run(&cache, &["pull", &registry.reference()])
+            .status
+            .success()
+    );
+    assert_eq!(registry.downloads.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn refuses_incompatible_snapshots_before_downloading() {
+    let dir = tempfile::tempdir().unwrap();
+    let cache = dir.path().join("cache");
+    let (layer, digest) = snapshot(dir.path());
+    for (key, value, message) in [
+        ("schema-version", "99", "update pelicode"),
+        ("normalizer-version", "0", "use a newer snapshot"),
+    ] {
+        let mut annotations = annotations_of(dir.path());
+        annotations[format!("io.github.tamada.pelicode.{key}")] = value.into();
+        let registry = Registry::with_annotations(layer.clone(), digest.clone(), annotations);
+        let output = run(&cache, &["pull", &registry.reference()]);
+        assert!(!output.status.success());
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains(message), "{stderr}");
+        assert_eq!(registry.downloads.load(Ordering::SeqCst), 0);
     }
 }

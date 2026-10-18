@@ -38,6 +38,11 @@ pub struct SnapshotSummary {
     pub functions: usize,
     /// Size of the snapshot file in bytes.
     pub bytes: u64,
+    /// Ecosystems in the snapshot, by name.
+    pub ecosystems: Vec<String>,
+    /// The `meta` of the snapshot: versions, feature parameters, fingerprint
+    /// levels and the time it was made (see [`Database::meta`]).
+    pub meta: std::collections::BTreeMap<String, String>,
 }
 
 impl Database {
@@ -78,6 +83,8 @@ impl Database {
     /// let options = SnapshotOptions { ecosystems: vec!["pypi".into()], latest_only: true };
     /// let summary = db.snapshot(&out, &options).unwrap();
     /// assert_eq!((summary.packages, summary.versions), (1, 1));
+    /// assert_eq!(summary.ecosystems, ["pypi"]);
+    /// assert_eq!(summary.meta["fingerprint_levels"], "1");
     ///
     /// let mut snapshot = Database::open(&out, &config).unwrap();
     /// assert!(snapshot.is_snapshot().unwrap());
@@ -108,6 +115,8 @@ impl Database {
             [LEVELS_KEY, levels.as_str(), SNAPSHOT_KEY],
         )?;
         let stats = copy.stats()?;
+        let ecosystems = copy.ecosystems()?;
+        let meta = copy.meta()?;
         copy.vacuum()?;
         copy.conn.pragma_update(None, "journal_mode", "DELETE")?;
         drop(copy);
@@ -117,6 +126,8 @@ impl Database {
             versions: stats.versions,
             functions: stats.functions,
             bytes: std::fs::metadata(out).map(|m| m.len()).unwrap_or(0),
+            ecosystems,
+            meta,
         })
     }
 
