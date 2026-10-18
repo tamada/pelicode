@@ -318,6 +318,7 @@ Polling the tracked packages works the same way for every repository and misses 
 
 - **Files and directories**: every file of a supported language in them, except hidden files and, in Git repositories, files ignored by `.gitignore`.
 - **A git range** (`--git`): with `BASE..HEAD` or `BASE...HEAD` the content of HEAD, with `BASE` alone the working tree, and only the functions overlapping lines added or changed in `git diff --unified=0`. A pure deletion marks the line where it happened.
+- **Staged changes** (`--staged`): the index against HEAD (everything staged in a repository without commits), with the staged content, for pre-commit hooks.
 
 Files can be narrowed down by language (`--languages`) and by glob patterns over their reported paths (`--exclude-path`, where `*` stays within a directory and `**` crosses directories). Functions with fewer than `--min-tokens` tokens (50 by default) are not checked.
 

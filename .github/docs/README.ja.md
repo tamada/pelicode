@@ -162,6 +162,7 @@ pelicode stats --top 20 -f json
 pelicode scan ./src
 pelicode scan --git main..HEAD                   # main から HEAD までに変更された関数だけ
 pelicode scan --git HEAD                         # 作業ツリーの未コミットの変更だけ
+pelicode scan --staged                           # ステージした変更だけ（pre-commit フック向け）
 pelicode scan ./src -f json -o report.json
 pelicode scan ./src -f sarif -o pelicode.sarif    # SARIF（GitHub Code Scanning 向け）
 pelicode scan ./src --exclude local:my-project   # 自分自身のパッケージは除く

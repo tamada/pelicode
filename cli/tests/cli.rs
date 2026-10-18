@@ -631,3 +631,58 @@ fn updates_of_an_empty_database() {
     let out = pelicode(&["crawl", "pypi", "--updates", "--db", &db]);
     assert!(out.contains("no pypi packages"), "{out}");
 }
+
+#[test]
+fn scans_staged_changes() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = db_arg(dir.path());
+    pelicode(&["index", FIXTURE, "--db", &db, "--min-tokens", "10"]);
+
+    // A repository without commits yet: everything staged is checked.
+    let repo = dir.path().join("repo");
+    std::fs::create_dir(&repo).unwrap();
+    git(&repo, &["init", "-q"]);
+    let stack = std::fs::read(Path::new(FIXTURE).join("src/Stack.java")).unwrap();
+    std::fs::write(repo.join("Staged.java"), &stack).unwrap();
+    git(&repo, &["add", "Staged.java"]);
+    // The staged content counts, not the working tree.
+    std::fs::write(repo.join("Staged.java"), "class Staged {}\n").unwrap();
+    // Not staged, so not checked.
+    std::fs::write(repo.join("Unstaged.java"), &stack).unwrap();
+
+    let repo_arg = repo.to_string_lossy().into_owned();
+    let scan = || -> Vec<String> {
+        let reports: serde_json::Value = serde_json::from_str(&pelicode(&[
+            "scan",
+            &repo_arg,
+            "--db",
+            &db,
+            "--staged",
+            "--min-tokens",
+            "10",
+            "-f",
+            "json",
+        ]))
+        .unwrap();
+        let mut paths: Vec<String> = reports
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["path"].as_str().unwrap().to_string())
+            .collect();
+        paths.dedup();
+        paths
+    };
+    assert_eq!(scan(), ["Staged.java"]);
+
+    // After a commit, nothing is staged.
+    git(&repo, &["commit", "-q", "-m", "staged"]);
+    assert!(scan().is_empty());
+
+    // --staged and --git exclude each other.
+    let both = pelicode_in(
+        dir.path(),
+        &["scan", &repo_arg, "--staged", "--git", "HEAD"],
+    );
+    assert!(!both.status.success());
+}

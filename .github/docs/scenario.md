@@ -35,7 +35,8 @@ pelicode scan --git HEAD --db ~/pelicode.db
   ```sh
   #!/bin/sh
   # .git/hooks/pre-commit
-  exec pelicode scan --git HEAD --db "$HOME/pelicode.db" --fail-on-match
+  # --staged checks what is about to be committed, as staged.
+  exec pelicode scan --staged --db "$HOME/pelicode.db" --fail-on-match
   ```
 
   If `core.hooksPath` is set in your Git configuration, Git runs the hooks of that directory instead of `.git/hooks`; put the hook there.

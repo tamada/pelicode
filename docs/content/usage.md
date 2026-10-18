@@ -253,6 +253,7 @@ pelicode scan [OPTIONS] [PATHS]...
 | --- | --- | --- |
 | `--db <DB>` | settings file, else `pelicode.db` | Database file or `oci://` snapshot; repeat to check against several at once (they must share feature parameters) |
 | `--git <RANGE>` | | Check only the functions changed in a git range. The path, if any, is the repository (default `.`) |
+| `--staged` | | Check only the functions changed in the staged changes, with their staged content, as a pre-commit hook would |
 | `--threshold <X>` | 0.7 | Minimum [similarity](/glossary#similarity) to report |
 | `--min-tokens <N>` | 50 | Functions with fewer tokens are not checked |
 | `--max-candidates <N>` | 5 | Candidates reported per function |
@@ -272,6 +273,7 @@ pelicode scan ./src
 pelicode scan --git main..HEAD                    # functions changed between main and HEAD
 pelicode scan --git main...feature                # changed on feature since it left main
 pelicode scan --git HEAD                          # uncommitted changes in the working tree
+pelicode scan --staged                            # staged changes, for a pre-commit hook
 pelicode scan ./src --exclude local:my-project    # do not report the project itself
 pelicode scan ./src -f json -o report.json
 pelicode scan --git origin/main...HEAD -f sarif -o pelicode.sarif   # for GitHub code scanning
