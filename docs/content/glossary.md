@@ -7,7 +7,7 @@ draft: false
 
 {{< katex >}}
 
-The terms below are the ones the commands, their `--help` and this site use. The order follows the work: code is **collected**, its functions are **normalized** and **hashed**, hashes are **counted** across packages, and code is **scanned** against them.
+The terms below are the ones the commands, their `--help` and this site use. The order follows the work: code is **collected**, its functions are **normalized** and **hashed**, hashes are **counted** across packages, code is **scanned** against them, and databases are **shared** as snapshots.
 
 ---
 
@@ -32,6 +32,10 @@ A place where a stored function was found: a file of a version of a package, wit
 ### Reference database
 
 The SQLite file, `pelicode.db` by default, holding the features of every indexed function together with its occurrences. It never holds source code.
+
+### Unreferenced file
+
+A stored file that no version links to any more, left behind when a version is indexed again with other files. It never appears in results, but takes space; `pelicode clean` removes it with its functions.
 
 ---
 
@@ -114,6 +118,10 @@ Inverse document frequency: with `--idf`, each fingerprint is weighted by \\(\ln
 
 Hash counts made before the last package was indexed. `scan` warns about them; `pelicode stats --refresh` brings them up to date.
 
+### Pending hashes
+
+The hashes whose package counts may have changed since the last count: those of the files linked to or unlinked from a version since then. `pelicode stats --refresh` recounts only them (an *incremental refresh*); `--full` recounts everything.
+
 ---
 
 ## 🔍 Scanning
@@ -145,3 +153,39 @@ The fingerprints the two functions have in common, excluding common ones. A simi
 ### Matched lines
 
 The line ranges covered by shared fingerprints, in the checked function and in the candidate (`lines 9-23 <-> 164-189`).
+
+### Dependencies
+
+The packages the checked project depends on, read from its lock files (`Cargo.lock`, `go.sum`, `requirements.txt`, `poetry.lock`, `Gemfile.lock`, `pom.xml` and others). Code found only in them is expected, so it is not reported; `scan` says how many candidates were left out this way, and `--no-exclude-dependencies` shows them.
+
+### Settings file
+
+`.pelicode.yaml`, `.pelicode.yml`, `.pelicode.json5` or `.pelicode.json`, found in the current directory or above it, up to the root of the git repository. It holds the options of `scan` and `crawl` and the database, so that they can be committed with the project. Options on the command line win over it.
+
+### SARIF
+
+The Static Analysis Results Interchange Format, a JSON format for the results of analysis tools (`scan -f sarif`). Each function with candidates is one result, at the level `note`, with the rule `exact-match` or `similar-match`.
+
+### Code scanning
+
+The GitHub feature that shows SARIF results as notes on the lines of a pull request and lists them in the Security tab of the repository.
+
+---
+
+## 📤 Sharing
+
+### Snapshot
+
+A copy of a reference database for checking only, written by `pelicode snapshot`: it keeps what `scan` needs and drops what only indexing uses. Nothing can be indexed into it. Snapshots are meant to be built in one place and checked against everywhere.
+
+### OCI artifact
+
+A file stored in a container registry (such as quay.io or ghcr.io) like an image, under a repository and tags. Snapshots are published as OCI artifacts, compressed with zstd.
+
+### Snapshot reference
+
+Where a published snapshot is, as `oci://REGISTRY/REPOSITORY:TAG` or `oci://REGISTRY/REPOSITORY@sha256:...`. It can be given wherever a database is (`--db`, `database` in the settings file).
+
+### Snapshot cache
+
+The directory where fetched snapshots are kept by digest: `$PELICODE_CACHE_DIR`, else the cache directory of the user. A tag that still points to the same digest is not downloaded again, and a cached snapshot is used when the registry cannot be reached.

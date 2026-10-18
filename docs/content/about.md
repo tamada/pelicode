@@ -34,13 +34,18 @@ pelicode is the prototype of a research project on infrastructure that detects s
 
 ## 🗺️ Status and Roadmap
 
-pelicode is a research prototype (v0.1). It can build a database from PyPI, Maven Central, the Go module proxy, RubyGems and crates.io, and check Go, Java, Kotlin, Python, Ruby and Rust code against it, from the command line. pelicode checks its own code, too.
+pelicode is a research prototype (v0.1). pelicode checks its own code, too. What it can do today:
+
+- Build a database from PyPI, Maven Central, the Go module proxy, RubyGems and crates.io, and keep it small: files are stored once, the counts of common hashes are refreshed incrementally, and `pelicode clean` removes what no version refers to any more.
+- Check Go, Java, Kotlin, Python, Ruby and Rust code against it, whole directories or only the lines a git range changed. It reports in text, JSON, CSV or SARIF for GitHub code scanning, and leaves out the dependencies of the checked code.
+- Keep the options of a repository in a settings file (`.pelicode.yaml` or `.pelicode.json5`).
+- Write snapshots of the database for checking only (`pelicode snapshot`), publish them as OCI artifacts in a registry, and check against them directly (`--db oci://...`), several at once if needed.
+- Check pull requests with the GitHub Action [pelicode-action](https://github.com/tamada/pelicode-action).
 
 Planned next:
 
-- A GitHub Action that checks pull requests and reports candidates in code scanning (SARIF).
 - Detection of newly published versions, to keep the database up to date.
-- Distributable snapshots of the database, without source code.
+- Snapshots published periodically, with their parameters readable before downloading.
 - An evaluation framework to measure recall, precision, speed and database size on mutated code.
 
 ---
@@ -59,12 +64,15 @@ Use the following BibTeX entry.
 
 ```tex
 @misc { pelicode,
-    author = {Haruaki Tamada},
-    title  = {pelicode: Know where your code came from},
-    note   = {\url{https://github.com/tamada/pelicode}},
-    year   = {2026},
+    author  = {Haruaki Tamada},
+    title   = {pelicode: Know where your code came from},
+    note    = {\url{https://github.com/tamada/pelicode}},
+    version = {0.1.0},
+    year    = {2026},
 }
 ```
+
+The repository also has a [`CITATION.cff`](https://github.com/tamada/pelicode/blob/main/CITATION.cff), from which GitHub offers "Cite this repository".
 
 ---
 
