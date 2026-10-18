@@ -269,6 +269,8 @@ cargo clippy --all-targets
 just --list      # the tasks CI runs (with https://just.systems/)
 ```
 
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow, adding a language or a package repository, and when to bump the versions of the hashes and the database.
+
 ## Not implemented yet
 
 - Automatic detection of newly published versions (packages are currently given by name, by a list file or as the top N)
