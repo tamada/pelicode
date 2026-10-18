@@ -9,9 +9,19 @@ use anyhow::{Context, Result, bail};
 /// Lines added or modified in each file, as 1-based inclusive ranges.
 pub struct Changes {
     pub files: BTreeMap<PathBuf, Vec<(usize, usize)>>,
-    /// Revision holding the new content; `None` for the working tree.
-    head: Option<String>,
+    /// Where the new content is.
+    head: Head,
     repo: PathBuf,
+}
+
+/// The new side of the changes.
+enum Head {
+    /// A revision.
+    Revision(String),
+    /// The working tree.
+    WorkTree,
+    /// The index (staged changes).
+    Index,
 }
 
 impl Changes {
@@ -20,19 +30,28 @@ impl Changes {
         let head = range
             .split_once("..")
             .map(|(_, head)| head.trim_start_matches('.'))
-            .map(|head| if head.is_empty() { "HEAD" } else { head }.to_string());
-        let diff = git(
-            repo,
-            &[
-                "diff",
-                "--unified=0",
-                "--no-color",
-                "--no-ext-diff",
-                "--find-renames",
-                "--diff-filter=AMR",
-                range,
-            ],
-        )?;
+            .map(|head| if head.is_empty() { "HEAD" } else { head }.to_string())
+            .map_or(Head::WorkTree, Head::Revision);
+        Changes::diff(repo, &[range], head)
+    }
+
+    /// Changes staged for the next commit: the index against `HEAD`, or
+    /// everything staged in a repository without commits.
+    pub fn staged(repo: &Path) -> Result<Changes> {
+        Changes::diff(repo, &["--cached"], Head::Index)
+    }
+
+    fn diff(repo: &Path, what: &[&str], head: Head) -> Result<Changes> {
+        let mut args = vec![
+            "diff",
+            "--unified=0",
+            "--no-color",
+            "--no-ext-diff",
+            "--find-renames",
+            "--diff-filter=AMR",
+        ];
+        args.extend_from_slice(what);
+        let diff = git(repo, &args)?;
         Ok(Changes {
             files: parse_diff(&String::from_utf8_lossy(&diff)),
             head,
@@ -43,8 +62,12 @@ impl Changes {
     /// Content of `path` at the new side of the range.
     pub fn content(&self, path: &Path) -> Result<Vec<u8>> {
         match &self.head {
-            Some(head) => git(&self.repo, &["show", &format!("{head}:{}", path.display())]),
-            None => {
+            Head::Revision(head) => {
+                git(&self.repo, &["show", &format!("{head}:{}", path.display())])
+            }
+            // `:path` is the staged content.
+            Head::Index => git(&self.repo, &["show", &format!(":{}", path.display())]),
+            Head::WorkTree => {
                 let full = self.repo.join(path);
                 std::fs::read(&full).with_context(|| format!("cannot read {}", full.display()))
             }

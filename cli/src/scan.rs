@@ -27,6 +27,10 @@ pub struct ScanArgs {
     /// Check only the functions changed in a git range (BASE, BASE..HEAD or BASE...HEAD).
     #[arg(long, value_name = "RANGE")]
     git: Option<String>,
+    /// Check only the functions changed in the staged changes (the index against HEAD), as a
+    /// pre-commit hook would.
+    #[arg(long, conflicts_with = "git")]
+    staged: bool,
     /// Minimum similarity (Jaccard of fingerprint sets) to report [default: 0.7].
     #[arg(long)]
     threshold: Option<f64>,
@@ -78,7 +82,7 @@ pub struct ScanArgs {
 /// The dependencies of what `args` checks: those around the repository with
 /// `--git`, else around each path given.
 fn dependencies_of(args: &ScanArgs) -> Dependencies {
-    let roots: Vec<PathBuf> = if args.git.is_some() || args.paths.is_empty() {
+    let roots: Vec<PathBuf> = if args.git.is_some() || args.staged || args.paths.is_empty() {
         vec![
             args.paths
                 .first()
@@ -104,9 +108,18 @@ enum ScanFormat {
     Sarif,
 }
 
+/// The repository of `--git` and `--staged`: the path given, else `.`.
+fn git_repository(args: &ScanArgs, option: &str) -> Result<PathBuf> {
+    match args.paths.as_slice() {
+        [] => Ok(PathBuf::from(".")),
+        [repo] => Ok(repo.clone()),
+        _ => bail!("{option} takes a single repository path"),
+    }
+}
+
 /// The path of a report relative to where pelicode runs, normally the root of
 /// the repository, as SARIF readers expect: the report paths are relative to
-/// the directory given (or to the repository with `--git`).
+/// the directory given (or to the repository with `--git` and `--staged`).
 fn repository_uri(paths: &[PathBuf], git: bool, report: &Path) -> String {
     let base: Option<&Path> = match paths {
         [] => None,
@@ -318,14 +331,13 @@ pub fn run(args: ScanArgs, settings: Option<&Loaded>) -> Result<bool> {
         detectors.push(Detector::new(db, options)?);
     }
 
-    let reports = match &args.git {
-        Some(range) => {
-            let repo = match args.paths.as_slice() {
-                [] => PathBuf::from("."),
-                [repo] => repo.clone(),
-                _ => bail!("--git takes a single repository path"),
-            };
-            let changes = Changes::of(&repo, range)?;
+    let changes = match (&args.git, args.staged) {
+        (Some(range), _) => Some(Changes::of(&git_repository(&args, "--git")?, range)?),
+        (None, true) => Some(Changes::staged(&git_repository(&args, "--staged")?)?),
+        (None, false) => None,
+    };
+    let reports = match &changes {
+        Some(changes) => {
             let mut files = Vec::new();
             for path in changes.files.keys() {
                 let Some(language) = Language::from_path(path) else {
@@ -346,7 +358,7 @@ pub fn run(args: ScanArgs, settings: Option<&Loaded>) -> Result<bool> {
         }
         None => {
             if args.paths.is_empty() {
-                bail!("give files or directories to check, or --git RANGE");
+                bail!("give files or directories to check, --git RANGE or --staged");
             }
             let mut files = extract_paths(&args.paths, &config)?;
             files.retain(|f| resolved.accepts(&f.path, f.language));
@@ -380,7 +392,7 @@ pub fn run(args: ScanArgs, settings: Option<&Loaded>) -> Result<bool> {
         ScanFormat::Json => crate::output::json(&mut out, &reports)?,
         ScanFormat::Csv => csv(&mut out, &reports)?,
         ScanFormat::Sarif => crate::sarif::write(&mut out, &reports, |r| {
-            repository_uri(&args.paths, args.git.is_some(), &r.path)
+            repository_uri(&args.paths, args.git.is_some() || args.staged, &r.path)
         })?,
     }
     out.flush()?;

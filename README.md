@@ -162,6 +162,7 @@ The counts are not updated automatically. After `crawl` or `index`, run `pelicod
 pelicode scan ./src
 pelicode scan --git main..HEAD                   # only functions changed between main and HEAD
 pelicode scan --git HEAD                         # only uncommitted changes in the working tree
+pelicode scan --staged                           # only staged changes (for a pre-commit hook)
 pelicode scan ./src -f json -o report.json
 pelicode scan ./src -f sarif -o pelicode.sarif    # SARIF, for GitHub code scanning
 pelicode scan ./src --exclude local:my-project   # skip your own package

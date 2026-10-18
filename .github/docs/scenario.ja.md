@@ -35,7 +35,8 @@ pelicode scan --git HEAD --db ~/pelicode.db
   ```sh
   #!/bin/sh
   # .git/hooks/pre-commit
-  exec pelicode scan --git HEAD --db "$HOME/pelicode.db" --fail-on-match
+  # --staged は、これからコミットする内容（ステージしたもの）を検査する
+  exec pelicode scan --staged --db "$HOME/pelicode.db" --fail-on-match
   ```
 
   git の設定で `core.hooksPath` を指定している場合、git は `.git/hooks` ではなくそのディレクトリのフックを実行します。フックはそちらに置いてください。
