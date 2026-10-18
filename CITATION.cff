@@ -16,6 +16,7 @@ repository-code: https://github.com/tamada/pelicode
 url: https://tamada.github.io/pelicode/
 license: MIT
 version: 0.1.0
+date-released: 2026-10-18
 keywords:
   - code provenance
   - code clone detection
