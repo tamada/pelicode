@@ -178,7 +178,7 @@ pelicode scan --git origin/main...HEAD --db pelicode.db --fail-on-match
 
 ## 🧭 Next Steps
 
-- **Grow the database.** `pelicode crawl pypi --top 100` fetches the 100 most downloaded PyPI packages, `pelicode crawl crates --top 100 --contact <URL>` does the same for crates.io, and `--list FILE` reads package names from a file. See [crawl](/usage#crawl).
+- **Grow the database.** `pelicode crawl pypi --top 100` fetches the 100 best-known PyPI packages, `--top` works for the other ecosystems too (with `--contact <URL>` for crates.io), and `--list FILE` reads package names from a file. See [crawl](/usage#crawl).
 - **Index your own projects** with `pelicode index`, so that copies between your projects are found too, and exclude a project from its own scan with `--exclude local:NAME`. See [index](/usage#index).
 - **Tune the search.** `--threshold`, `--stop-packages` and `--min-shared` trade missed copies against false alarms. See [scan](/usage#scan).
 - **Look inside.** `pelicode extract upload.py --tokens N1` shows how a function looks after normalization. See [extract](/usage#extract).

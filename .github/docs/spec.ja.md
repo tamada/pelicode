@@ -255,7 +255,7 @@ winnowing の性質として、w + k − 1 トークン以上の共通部分を�
 
 PyPI の 26 パッケージ（77,084 関数）では、231 MB の DB から 174 MB のスナップショットができ、zstd（`-19`）で圧縮すると 54 MB になった。どちらに対しても `scan` は同じ候補を報告する。
 
-スナップショットは zstd で圧縮し、OCI アーティファクトとして quay.io（`quay.io/tama5/pelicode-db`）に `<NAME>-YYYYMMDD` と `<NAME>-latest` のタグで公開する。`just snapshot_push` が [ORAS](https://oras.land/) で push する。`snapshot` ワークフローが毎月1日に一から作り直す。対象は、PyPI と crates.io のダウンロード数上位 500 件と、Maven Central・Go・RubyGems については `.github/snapshots/` の一覧にあるパッケージである。日付のタグは残すので、実験では使ったスナップショットを指定できる。
+スナップショットは zstd で圧縮し、OCI アーティファクトとして quay.io（`quay.io/tama5/pelicode-db`）に `<NAME>-YYYYMMDD` と `<NAME>-latest` のタグで公開する。`just snapshot_push` が [ORAS](https://oras.land/) で push する。`snapshot` ワークフローが毎月1日に一から作り直す。対象は、各エコシステムのよく知られた上位 500 件（`--top 500`）である。日付のタグは残すので、実験では使ったスナップショットを指定できる。
 
 取得は pelicode 自身が行う。`pelicode pull oci://REGISTRY/REPOSITORY:TAG` のほか、`scan`・`stats`・`export` の `--db` にこの形式を書いてもよい。OCI の配布 API を使い、公開リポジトリには匿名トークンで接続する。メディアタイプ `application/vnd.pelicode.snapshot.v1.sqlite+zstd` のレイヤーを取得し、ダイジェストと大きさで検証してから展開する。ダウンロードの前に、マニフェストの注釈を読む。注釈は `pelicode snapshot --annotations` が `oras push` 用に書き出すもので、pelicode・テーブル構成・正規化の版、特徴量のパラメータ、フィンガープリントのレベル、エコシステム、件数（`io.github.tamada.pelicode.*`）と、`org.opencontainers.image.created` からなる。テーブル構成が新しいか、正規化の版が異なるスナップショットは、対処（pelicode の更新か、新しいスナップショットの利用）を示して拒否する。`pelicode pull --info` は、ダウンロードせずに注釈を表示する。スナップショットはダイジェストごとにキャッシュする（`$PELICODE_CACHE_DIR`、なければ利用者のキャッシュディレクトリ）。タグが同じダイジェストを指していればマニフェストを1回取得するだけで済み、レジストリに接続できないときは、前回そのタグが指していたスナップショットを使う。
 
@@ -272,7 +272,7 @@ PyPI の 26 パッケージ（77,084 関数）では、231 MB の DB から 174 
 5. **特徴抽出と索引**: ファイルごとに並列に特徴を抽出し、データベースに保存する。
 6. **記録**: 手順3以降で失敗した場合は、状態 `failed` とエラーを記録する。
 
-対象のパッケージは、名前（`NAME[@VERSION]` など）、一覧ファイル（`--list`）、ダウンロード数の上位 N 件（`--top`、PyPI と crates.io のみ）で指定する。重複は除く。
+対象のパッケージは、名前（`NAME[@VERSION]` など）、一覧ファイル（`--list`）、よく知られた上位 N 件（`--top`）で指定する。重複は除く。
 
 ### 6.2 リポジトリごとの取得方法
 
@@ -286,7 +286,7 @@ PyPI の 26 パッケージ（77,084 関数）では、231 MB の DB から 174 
 | ライセンス | `license_expression` → classifier → `license` | POM の `<licenses>`（親 POM を最大5段） | LICENSE ファイルの本文 | `licenses` | `license`（`/` は `OR` に読み替え） |
 | 公開日時 | `upload_time_iso_8601` | sources jar の `Last-Modified` | `.info` の `Time` | `version_created_at` | `created_at` |
 | リポジトリ URL | `project_urls` | POM の `<scm><url>` / `<url>` | `.info` の `Origin.URL` | `source_code_uri` / `homepage_uri` | `repository` |
-| 上位 N 件 | hugovk/top-pypi-packages | なし | なし | なし | 累計ダウンロード数 |
+| 上位 N 件 | ダウンロード数（hugovk/top-pypi-packages） | 依存しているリポジトリの数（ecosyste.ms） | 依存しているリポジトリの数（ecosyste.ms） | ダウンロード数（ecosyste.ms） | 累計ダウンロード数 |
 
 - PyPI のパッケージ名は PEP 503 で正規化する。
 - Go のモジュールパスは、プロキシの規則に従って大文字を `!` + 小文字にエスケープする。

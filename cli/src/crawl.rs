@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 use clap::Args;
+use pelicode_crawl::ecosystems::{self, Ranking};
 use pelicode_crawl::{Client, Crawler, Ecosystem, Outcome, crates, pypi};
 use pelicode_db::Database;
 
@@ -21,7 +22,8 @@ pub struct CrawlArgs {
     /// File listing packages, one per line (`#` starts a comment).
     #[arg(long)]
     list: Option<PathBuf>,
-    /// Also crawl the N most downloaded packages (pypi and crates only).
+    /// Also crawl the N best-known packages: the most downloaded of pypi, crates and rubygems,
+    /// and those most depended on of maven and go (from ecosyste.ms).
     #[arg(long, value_name = "N")]
     top: Option<usize>,
     /// Also check every package of the ecosystem already in the database for a newer version,
@@ -75,11 +77,26 @@ pub fn run(args: CrawlArgs, settings: Option<&Loaded>) -> Result<bool> {
         );
     }
     if let Some(n) = args.top {
-        match args.ecosystem {
-            Ecosystem::PyPI => packages.extend(pypi::top_packages(&client, n)?),
-            Ecosystem::Crates => packages.extend(crates::top_packages(&client, n)?),
-            _ => bail!("--top is available for pypi and crates only"),
-        }
+        let top = match args.ecosystem {
+            Ecosystem::PyPI => pypi::top_packages(&client, n)?,
+            Ecosystem::Crates => crates::top_packages(&client, n)?,
+            Ecosystem::RubyGems => {
+                ecosystems::top_packages(&client, "rubygems.org", Ranking::Downloads, n)?
+            }
+            Ecosystem::Maven => ecosystems::top_packages(
+                &client,
+                "repo1.maven.org",
+                Ranking::DependentRepositories,
+                n,
+            )?,
+            Ecosystem::Go => ecosystems::top_packages(
+                &client,
+                "proxy.golang.org",
+                Ranking::DependentRepositories,
+                n,
+            )?,
+        };
+        packages.extend(top);
     }
     if args.ecosystem == Ecosystem::Crates && contact.is_none() {
         eprintln!(

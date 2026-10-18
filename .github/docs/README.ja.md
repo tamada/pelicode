@@ -122,7 +122,7 @@ hex.go:10-44 parseID (tokens=275)
 
 ```bash
 pelicode crawl pypi requests numpy@2.1.0         # NAME[@VERSION]
-pelicode crawl pypi --top 100                    # ダウンロード数の上位 100 件（PyPI と crates.io のみ）
+pelicode crawl pypi --top 100                    # よく知られた上位 100 件
 pelicode crawl maven com.google.code.gson:gson:2.11.0
 pelicode crawl go golang.org/x/mod@v0.20.0
 pelicode crawl rubygems thor@1.3.0
@@ -136,7 +136,7 @@ pelicode crawl pypi --updates                    # DB にある PyPI のパッ�
 - アーカイブはディスクに展開せず、メモリ上で読んで捨てます。
 - リクエストは1件ずつ、既定で1秒の間隔を空けて送ります（`--delay-ms`）。大量に取得するときは、`--contact` で連絡先（URL かメールアドレス）を User-Agent に入れてください。
 - 失敗したパッケージは DB に記録されます。1件でも失敗すると終了コードは 1 です。
-- PyPI の `--top` が使うダウンロード数のランキングは、PyPI 公式ではなく第三者の [hugovk/top-pypi-packages](https://github.com/hugovk/top-pypi-packages) です。crates.io では、crates.io 自身の累計ダウンロード数を使います。
+- PyPI の `--top` が使うダウンロード数のランキングは、PyPI 公式ではなく第三者の [hugovk/top-pypi-packages](https://github.com/hugovk/top-pypi-packages) です。crates.io では、crates.io 自身の累計ダウンロード数を使います。Maven Central、Go モジュールプロキシ、RubyGems には自前のランキングがないので、[ecosyste.ms](https://ecosyste.ms/) から取得します。RubyGems はダウンロード数、ダウンロード数を公開していない Maven Central と Go は依存しているリポジトリの数の順です。目的はよく知られたパッケージを集めることで、リポジトリをまたいで同じ基準にそろえることではありません。
 - [crates.io のデータアクセスポリシー](https://crates.io/data-access)は、API へのリクエストを1秒に1回までとし、連絡先の明示を強く推奨しています。crates.io から取得するときは `--contact` を付け、`--delay-ms` は 1000 以上にしてください。
 
 ### index: 手元のプロジェクトの登録
