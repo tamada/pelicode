@@ -1,8 +1,8 @@
 # pelicode への貢献
 
-[English](CONTRIBUTING.md) | 日本語
+[English](../../CONTRIBUTING.md) | 日本語
 
-pelicode に関心を持っていただきありがとうございます。このガイドでは、プロジェクトの構成、ビルドとテストの方法、言語やパッケージリポジトリを追加するときの注意点を説明します。pelicode の目的と背景は [README](README.ja.md)、[利用シナリオ](.github/docs/scenario.ja.md)、[仕様](.github/docs/spec.ja.md) を参照してください。
+pelicode に関心を持っていただきありがとうございます。このガイドでは、プロジェクトの構成、ビルドとテストの方法、言語やパッケージリポジトリを追加するときの注意点を説明します。pelicode の目的と背景は [README](README.ja.md)、[利用シナリオ](scenario.ja.md)、[仕様](spec.ja.md) を参照してください。
 
 pelicode が示すのは**確認すべき候補**であり、盗用やライセンス違反の判定ではありません。コード、メッセージ、ドキュメントのいずれでもこの立場を保ってください。
 
@@ -57,7 +57,7 @@ core  ←  db  ←  detect  ←  cli
 ### コーディングスタイル
 
 - `cargo fmt` に従い、clippy の警告をなくしてください（`-D warnings`）。
-- コード、コメント、メッセージ、ドキュメントは英語で書きます。README、仕様、利用シナリオには日本語版（`*.ja.md`）もあるので、一緒に更新してください。
+- コード、コメント、メッセージ、ドキュメントは英語で書きます。README、仕様、利用シナリオには日本語版（`.github/docs` の `*.ja.md`）もあるので、一緒に更新してください。
 - コメントは理由を控えめに書き、何をするかは名前で表してください。
 - 記録・出力するパスは、どのプラットフォームでも `/` 区切りにします（`pelicode_core::slash_path`）。
 - エラーには、何がどこで失敗したか（ファイル、URL、設定ファイルのキー）を含めてください。
@@ -121,7 +121,7 @@ core  ←  db  ←  detect  ←  cli
 
 - **API**：ライブラリの crate は `#![warn(missing_docs)]` です。公開する要素にはすべて doc コメントを、公開する関数にはすべて例を付けてください（ネットワークが必要なら `no_run`）。`just doc` が通る必要があります。
 - **コマンドライン**：clap の引数の doc コメントが `--help` の文面になります。短く書き、既定値を明記してください。
-- **利用者向け**：README（`README.md`、`README.ja.md`）とサイト（`docs/content/`：Usage、Install、Getting Started、Glossary）。
+- **利用者向け**：README（`README.md`、`.github/docs/README.ja.md`）とサイト（`docs/content/`：Usage、Install、Getting Started、Glossary）。
 - **設計**：仕様（`.github/docs/spec.md`、`spec.ja.md`）は実装を説明するものです。機能が入ったら §12.2（未実装の機能）から §12.1（実装状況）へ移してください。利用シナリオ（`.github/docs/scenario*.md`）には、誰に何ができるかを書きます。
 
 ## リリース
@@ -130,4 +130,4 @@ core  ←  db  ←  detect  ←  cli
 
 ## ライセンス
 
-貢献していただいた内容は、[MIT ライセンス](LICENSE) で提供されることに同意したものとします。
+貢献していただいた内容は、[MIT ライセンス](../../LICENSE) で提供されることに同意したものとします。

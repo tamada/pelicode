@@ -1,6 +1,6 @@
 # pelicode
 
-[English](README.md) | 日本語
+[English](../../README.md) | 日本語
 
 関数単位でコードの構造的な特徴（AST に基づくハッシュ）を取り出し、公開パッケージのコードと照らし合わせて、**確認が必要な類似コードの候補**を見つけるツールです。
 
@@ -9,7 +9,7 @@ dependabot が依存ライブラリのバージョンを外部リポジトリと
 > [!IMPORTANT]
 > pelicode は盗用やライセンス違反を**判定しません**。示すのは、出典とライセンスを添えた「要確認の類似候補」です。流用かどうか、ライセンス上の問題があるかどうかは、人が確認して判断してください。
 
-研究用の試作（v0.1）です。想定している使い方と現状は [利用シナリオ](.github/docs/scenario.ja.md) に、設計と実装の詳細は [仕様書](.github/docs/spec.ja.md) にあります。
+研究用の試作（v0.1）です。想定している使い方と現状は [利用シナリオ](scenario.ja.md) に、設計と実装の詳細は [仕様書](spec.ja.md) にあります。
 
 ## 仕組み
 
@@ -258,11 +258,11 @@ DB には作成時のパラメータが記録されます。異なるパラメ�
 
 | ディレクトリ | crate | 内容 |
 | --- | --- | --- |
-| [core](core) | pelicode-core | 構文解析、関数抽出、正規化、ハッシュ・フィンガープリント・MinHash |
-| [db](db) | pelicode-db | SQLite への保存、検索用の問い合わせ、ハッシュの集計 |
-| [detect](detect) | pelicode-detect | 類似候補の検索 |
-| [crawl](crawl) | pelicode-crawl | PyPI・Maven Central・Go・RubyGems・crates.io からの取得 |
-| [cli](cli) | pelicode-cli | `pelicode` コマンド |
+| [core](../../core) | pelicode-core | 構文解析、関数抽出、正規化、ハッシュ・フィンガープリント・MinHash |
+| [db](../../db) | pelicode-db | SQLite への保存、検索用の問い合わせ、ハッシュの集計 |
+| [detect](../../detect) | pelicode-detect | 類似候補の検索 |
+| [crawl](../../crawl) | pelicode-crawl | PyPI・Maven Central・Go・RubyGems・crates.io からの取得 |
+| [cli](../../cli) | pelicode-cli | `pelicode` コマンド |
 
 ```bash
 cargo test       # テスト（ネットワークには接続しません）
@@ -280,4 +280,4 @@ just --list      # CI が実行するタスクの一覧（https://just.systems/ 
 
 ## ライセンス
 
-[MIT](LICENSE)
+[MIT](../../LICENSE)

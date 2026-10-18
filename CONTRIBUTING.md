@@ -1,6 +1,6 @@
 # Contributing to pelicode
 
-English | [日本語](CONTRIBUTING.ja.md)
+English | [日本語](.github/docs/CONTRIBUTING.ja.md)
 
 Thank you for your interest in pelicode. This guide explains how the project is organized, how to build and test it, and what to keep in mind when adding a language or a package repository. For what pelicode is and why, read the [README](README.md), the [usage scenarios](.github/docs/scenario.md) and the [specification](.github/docs/spec.md).
 
@@ -57,7 +57,7 @@ Other places: `action.yml` and `action/` (the GitHub Action), `.github/workflows
 ### Code Style
 
 - `cargo fmt` formatting and no clippy warnings (`-D warnings`).
-- Code, comments, messages and documentation are in English; READMEs, the specification and the scenarios also have Japanese versions (`*.ja.md`) that should change together.
+- Code, comments, messages and documentation are in English; READMEs, the specification and the scenarios also have Japanese versions (`*.ja.md` in `.github/docs`) that should change together.
 - Comments explain why, sparingly; names explain what.
 - Paths that are recorded or reported use `/` on every platform (`pelicode_core::slash_path`).
 - Errors name what failed and where (the file, the URL, the key of a settings file).
@@ -121,7 +121,7 @@ Two versions protect users from mixing incompatible data. Bump them in the same 
 
 - **API**: the library crates have `#![warn(missing_docs)]`. Every public item has a doc comment, and every public function an example (`no_run` when it needs the network); `just doc` must pass.
 - **Command line**: the doc comments of clap arguments are the text of `--help`; keep them short and say the default.
-- **Users**: the READMEs (`README.md`, `README.ja.md`) and the site (`docs/content/`: Usage, Install, Getting Started, Glossary).
+- **Users**: the READMEs (`README.md`, `.github/docs/README.ja.md`) and the site (`docs/content/`: Usage, Install, Getting Started, Glossary).
 - **Design**: the specification (`.github/docs/spec.md`, `spec.ja.md`) describes the implementation; move features from §12.2 (Not Implemented Yet) to §12.1 (Status) as they land. The scenarios (`.github/docs/scenario*.md`) say what works for whom.
 
 ## Releases

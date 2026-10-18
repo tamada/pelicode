@@ -1,6 +1,6 @@
 # pelicode
 
-English | [日本語](README.ja.md)
+English | [日本語](.github/docs/README.ja.md)
 
 pelicode extracts structural features of code at the function level (hashes based on the AST) and compares them with the code of published packages to find **similar code that should be reviewed**.
 
