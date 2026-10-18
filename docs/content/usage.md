@@ -188,6 +188,7 @@ pelicode snapshot -o <FILE> [OPTIONS]
 | `--ecosystem <ECOSYSTEM>` | all | Only these ecosystems (repeatable or comma-separated) |
 | `--latest` | | Only the latest version of each package, by publication time |
 | `--force` | | Replace the snapshot file if it exists |
+| `--annotations <FILE>` | | Also write the annotations to give the snapshot in a registry, as an annotation file of ORAS |
 | `-f, --format <FORMAT>` | `text` | `text` or `json` |
 
 ```
@@ -199,10 +200,12 @@ A snapshot keeps everything `scan` needs, with the hash statistics recounted for
 Snapshots are published in quay.io as [OCI artifacts](https://oras.land/), compressed with zstd (to about a third), tagged `<NAME>-YYYYMMDD` and `<NAME>-latest`. With [ORAS](https://oras.land/docs/installation) and zstd installed:
 
 ```sh
-pelicode snapshot -o pypi.db --ecosystem pypi --latest
+pelicode snapshot -o pypi.db --ecosystem pypi --latest --annotations pypi.db.annotations.json
 oras login quay.io
 just snapshot_push pypi.db pypi                 # quay.io/tama5/pelicode-db:pypi-YYYYMMDD and :pypi-latest
 ```
+
+The annotations say what is in the snapshot and how it was built, so that it can be checked before it is downloaded: the versions of pelicode, of the table layout and of the normalizer, the feature parameters, the fingerprint levels, the ecosystems, the numbers of packages, versions and functions (keys `io.github.tamada.pelicode.*`), and the creation time (`org.opencontainers.image.created`).
 
 Elsewhere, `scan` fetches it by itself (see [`pull`](#pull)):
 
@@ -221,10 +224,13 @@ pelicode pull <REFERENCE> [-o <FILE>]
 | Option | Description |
 | --- | --- |
 | `-o, --out <FILE>` | Also copy the snapshot to this file |
+| `--info` | Only show the digest, the size and the annotations of the snapshot, without downloading it |
+| `-f, --format <FORMAT>` | `text` or `json`, for `--info` |
 
 - **Verified**: the download is checked against the digest of the layer in the manifest, then decompressed; neither ORAS nor zstd is needed.
 - **Cached**: snapshots are kept by digest in `$PELICODE_CACHE_DIR`, else the cache directory of the user (`~/.cache/pelicode` on Linux, `~/Library/Caches/pelicode` on macOS). When a tag still points to the same digest, only the manifest is fetched.
 - **Offline**: when the registry cannot be reached, the snapshot the tag pointed to last time is used, with a warning.
+- **Checked first**: a snapshot whose annotations show it cannot be used, because it was made by a newer pelicode or with another normalizer, is refused before it is downloaded.
 - Public repositories need no login; pelicode asks the registry for an anonymous token.
 
 ```

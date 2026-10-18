@@ -257,7 +257,7 @@ With 26 PyPI packages (77,084 functions), the database of 231 MB gives a snapsho
 
 Snapshots are published as OCI artifacts in quay.io (`quay.io/tama5/pelicode-db`), compressed with zstd, with tags `<NAME>-YYYYMMDD` and `<NAME>-latest`; `just snapshot_push` pushes them with [ORAS](https://oras.land/).
 
-pelicode fetches them itself: `pelicode pull oci://REGISTRY/REPOSITORY:TAG`, or any `--db` of that form for `scan`, `stats` and `export`. It uses the OCI distribution API with an anonymous token for public repositories, takes the layer of media type `application/vnd.pelicode.snapshot.v1.sqlite+zstd`, checks it against its digest and size, and decompresses it. Snapshots are cached by digest (`$PELICODE_CACHE_DIR`, else the cache directory of the user); a tag that still points to the same digest costs one request for the manifest, and when the registry cannot be reached, the snapshot the tag pointed to last time is used.
+pelicode fetches them itself: `pelicode pull oci://REGISTRY/REPOSITORY:TAG`, or any `--db` of that form for `scan`, `stats` and `export`. It uses the OCI distribution API with an anonymous token for public repositories, takes the layer of media type `application/vnd.pelicode.snapshot.v1.sqlite+zstd`, checks it against its digest and size, and decompresses it. Before downloading, it reads the annotations of the manifest, which `pelicode snapshot --annotations` writes for `oras push` (the versions of pelicode, of the table layout and of the normalizer, the feature parameters, the fingerprint levels, the ecosystems and the counts, under `io.github.tamada.pelicode.*`, and `org.opencontainers.image.created`): a snapshot with a newer table layout or another normalizer version is refused with what to do (update pelicode, or use a newer snapshot). `pelicode pull --info` shows the annotations without downloading. Snapshots are cached by digest (`$PELICODE_CACHE_DIR`, else the cache directory of the user); a tag that still points to the same digest costs one request for the manifest, and when the registry cannot be reached, the snapshot the tag pointed to last time is used.
 
 ## 6. Collection (pelicode-crawl)
 
@@ -545,6 +545,7 @@ A command that runs evaluation experiments (`pelicode eval`) is not implemented 
 | Database cleanup (`pelicode clean`) | Done |
 | Snapshots (`pelicode snapshot`, OCI artifacts in quay.io, `pelicode pull` and `--db oci://...`) | Done (none published yet) |
 | Checking against several databases at once | Done |
+| Annotations of snapshots, checked before downloading | Done |
 | Snapshots in the settings file | Done |
 | CI, release, container, documentation site | Done (no release made yet) |
 
@@ -553,7 +554,7 @@ A command that runs evaluation experiments (`pelicode eval`) is not implemented 
 | Feature | Description |
 | --- | --- |
 | Detection of new versions | `list_updates(since)` with the RSS feeds of crates.io, PyPI updates, index.golang.org, ... |
-| Using snapshots | Annotations checked before downloading (#26), periodic publication (#27) |
+| Using snapshots | Periodic publication (#27) |
 | Evaluation | `pelicode eval` and the generation of evaluation data (§11.1) |
 | No dependency on the git command | Reading diffs with gix, the Rust implementation of git |
 

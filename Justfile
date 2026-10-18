@@ -80,10 +80,11 @@ docker_buildx:
 snapshot_repository := "quay.io/tama5/pelicode-db"
 snapshot_media_type := "application/vnd.pelicode.snapshot.v1.sqlite+zstd"
 
-# Compress a snapshot and push it into quay.io as NAME-YYYYMMDD and NAME-latest (needs zstd, oras)
+# Push a snapshot into quay.io as NAME-YYYYMMDD and NAME-latest, with FILE.annotations.json from `pelicode snapshot --annotations`
 snapshot_push file name:
     zstd -19 -T0 --force "{{file}}" -o "{{file}}.zst"
     cd "$(dirname "{{file}}")" && oras push \
         --artifact-type application/vnd.pelicode.snapshot.v1 \
+        --annotation-file "$(basename "{{file}}").annotations.json" \
         "{{snapshot_repository}}:{{name}}-$(date -u +%Y%m%d),{{name}}-latest" \
         "$(basename "{{file}}").zst:{{snapshot_media_type}}"

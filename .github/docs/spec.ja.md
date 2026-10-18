@@ -257,7 +257,7 @@ PyPI の 26 パッケージ（77,084 関数）では、231 MB の DB から 174 
 
 スナップショットは zstd で圧縮し、OCI アーティファクトとして quay.io（`quay.io/tama5/pelicode-db`）に `<NAME>-YYYYMMDD` と `<NAME>-latest` のタグで公開する。`just snapshot_push` が [ORAS](https://oras.land/) で push する。
 
-取得は pelicode 自身が行う。`pelicode pull oci://REGISTRY/REPOSITORY:TAG` のほか、`scan`・`stats`・`export` の `--db` にこの形式を書いてもよい。OCI の配布 API を使い、公開リポジトリには匿名トークンで接続する。メディアタイプ `application/vnd.pelicode.snapshot.v1.sqlite+zstd` のレイヤーを取得し、ダイジェストと大きさで検証してから展開する。スナップショットはダイジェストごとにキャッシュする（`$PELICODE_CACHE_DIR`、なければ利用者のキャッシュディレクトリ）。タグが同じダイジェストを指していればマニフェストを1回取得するだけで済み、レジストリに接続できないときは、前回そのタグが指していたスナップショットを使う。
+取得は pelicode 自身が行う。`pelicode pull oci://REGISTRY/REPOSITORY:TAG` のほか、`scan`・`stats`・`export` の `--db` にこの形式を書いてもよい。OCI の配布 API を使い、公開リポジトリには匿名トークンで接続する。メディアタイプ `application/vnd.pelicode.snapshot.v1.sqlite+zstd` のレイヤーを取得し、ダイジェストと大きさで検証してから展開する。ダウンロードの前に、マニフェストの注釈を読む。注釈は `pelicode snapshot --annotations` が `oras push` 用に書き出すもので、pelicode・テーブル構成・正規化の版、特徴量のパラメータ、フィンガープリントのレベル、エコシステム、件数（`io.github.tamada.pelicode.*`）と、`org.opencontainers.image.created` からなる。テーブル構成が新しいか、正規化の版が異なるスナップショットは、対処（pelicode の更新か、新しいスナップショットの利用）を示して拒否する。`pelicode pull --info` は、ダウンロードせずに注釈を表示する。スナップショットはダイジェストごとにキャッシュする（`$PELICODE_CACHE_DIR`、なければ利用者のキャッシュディレクトリ）。タグが同じダイジェストを指していればマニフェストを1回取得するだけで済み、レジストリに接続できないときは、前回そのタグが指していたスナップショットを使う。
 
 ## 6. 収集（pelicode-crawl）
 
@@ -545,6 +545,7 @@ pelicode-core、pelicode-db、pelicode-detect、pelicode-crawl はライブラ�
 | データベースの掃除（`pelicode clean`） | 実装済み |
 | スナップショット（`pelicode snapshot`、quay.io の OCI アーティファクト、`pelicode pull` と `--db oci://...`） | 実装済み（公開は未実施） |
 | 複数の DB との同時照合 | 実装済み |
+| スナップショットの注釈と、ダウンロード前の確認 | 実装済み |
 | 設定ファイルでのスナップショットの指定 | 実装済み |
 | CI、リリース、コンテナ、ドキュメントサイト | 実装済み（実際のリリースは未実施） |
 
@@ -553,7 +554,7 @@ pelicode-core、pelicode-db、pelicode-detect、pelicode-crawl はライブラ�
 | 機能 | 内容 |
 | --- | --- |
 | 新しいバージョンの検知 | crates.io の RSS、PyPI の更新情報、index.golang.org などを使った `list_updates(since)` |
-| スナップショットの利用 | ダウンロード前の注釈の確認（#26）、定期的な公開（#27） |
+| スナップショットの利用 | 定期的な公開（#27） |
 | 評価実験 | `pelicode eval` と評価データの生成（§11.1） |
 | git コマンドへの依存の解消 | gix（Rust 実装の git）による差分の取得 |
 

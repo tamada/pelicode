@@ -6,6 +6,7 @@
 //! the digest of the layer, decompressed, and cached by digest: a second
 //! fetch of an unchanged tag downloads only the manifest.
 
+use std::collections::BTreeMap;
 use std::fmt;
 use std::fs;
 use std::io::{self, Read, Write};
@@ -21,6 +22,9 @@ use ureq::Agent;
 pub const SCHEME: &str = "oci://";
 /// Media type of the layer holding a snapshot.
 pub const SNAPSHOT_MEDIA_TYPE: &str = "application/vnd.pelicode.snapshot.v1.sqlite+zstd";
+
+/// Prefix of the annotations pelicode gives snapshots.
+pub const ANNOTATION_PREFIX: &str = "io.github.tamada.pelicode.";
 
 const MANIFEST_TYPES: &str = "application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json";
 
@@ -132,11 +136,12 @@ pub fn cache_dir() -> Result<PathBuf> {
 /// to last time is used, with a warning.
 pub fn fetch(reference: &Reference, cache: &Path) -> Result<Fetched> {
     let client = Registry::new(reference);
-    let layer = match client.snapshot_layer() {
-        Ok(layer) => layer,
+    let (layer, annotations) = match client.manifest() {
+        Ok(found) => found,
         Err(Failure::Unreachable(e)) => return offline(reference, cache, e),
         Err(Failure::Other(e)) => return Err(e),
     };
+    check(reference, &annotations)?;
     let path = blob_path(cache, &layer.digest)?;
     let downloaded = if path.exists() {
         false
@@ -196,6 +201,119 @@ struct Layer {
 struct Manifest {
     #[serde(default)]
     layers: Vec<Layer>,
+    #[serde(default)]
+    annotations: BTreeMap<String, String>,
+}
+
+/// What the manifest of a snapshot says, before downloading it.
+#[derive(Debug, serde::Serialize)]
+pub struct Info {
+    /// Digest of the compressed snapshot.
+    pub digest: String,
+    /// Size of the compressed snapshot in bytes.
+    pub size: u64,
+    /// Annotations of the manifest.
+    pub annotations: BTreeMap<String, String>,
+}
+
+/// The annotations to give the manifest of a snapshot: its versions,
+/// feature parameters, contents and creation time.
+pub fn annotations(summary: &pelicode_db::SnapshotSummary) -> BTreeMap<String, String> {
+    let mut annotations = BTreeMap::new();
+    let mut put = |key: &str, value: String| {
+        annotations.insert(format!("{ANNOTATION_PREFIX}{key}"), value);
+    };
+    put("version", env!("CARGO_PKG_VERSION").to_string());
+    for (key, meta) in [
+        ("schema-version", "schema_version"),
+        ("normalizer-version", "normalizer_version"),
+        ("ident-mode", "ident_mode"),
+        ("kgram", "kgram"),
+        ("window", "window"),
+        ("minhash-size", "minhash_size"),
+        ("bands", "bands"),
+        ("fingerprint-levels", "fingerprint_levels"),
+    ] {
+        if let Some(value) = summary.meta.get(meta) {
+            put(key, value.clone());
+        }
+    }
+    put("ecosystems", summary.ecosystems.join(","));
+    put("packages", summary.packages.to_string());
+    put("versions", summary.versions.to_string());
+    put("functions", summary.functions.to_string());
+    if let Some(created) = summary.meta.get("snapshot_created_at") {
+        annotations.insert("org.opencontainers.image.created".into(), created.clone());
+    }
+    annotations.insert(
+        "org.opencontainers.image.source".into(),
+        "https://github.com/tamada/pelicode".into(),
+    );
+    annotations
+}
+
+/// Whether this pelicode can read the snapshot the annotations describe.
+/// Snapshots without annotations are accepted; the database itself is
+/// checked when it is opened.
+fn check(reference: &Reference, annotations: &BTreeMap<String, String>) -> Result<()> {
+    let version = |key: &str| -> Result<Option<u32>> {
+        let key = format!("{ANNOTATION_PREFIX}{key}");
+        annotations
+            .get(&key)
+            .map(|v| {
+                v.parse()
+                    .map_err(|_| anyhow!("{reference}: invalid annotation {key} = {v}"))
+            })
+            .transpose()
+    };
+    let newer = annotations
+        .get(&format!("{ANNOTATION_PREFIX}version"))
+        .map(|v| format!(" (made by pelicode {v})"))
+        .unwrap_or_default();
+    if let Some(schema) = version("schema-version")? {
+        let current = pelicode_db::SCHEMA_VERSION;
+        if schema > current {
+            bail!(
+                "{reference}: the snapshot has schema version {schema}{newer}, but this pelicode \
+                 reads up to {current}; update pelicode"
+            );
+        }
+        if schema < pelicode_db::OLDEST_SCHEMA_VERSION {
+            bail!(
+                "{reference}: the snapshot has schema version {schema}{newer}, which this \
+                 pelicode no longer reads; use a newer snapshot"
+            );
+        }
+    }
+    if let Some(normalizer) = version("normalizer-version")? {
+        let current = pelicode_core::NORMALIZER_VERSION;
+        if normalizer > current {
+            bail!(
+                "{reference}: the snapshot was built with normalizer version {normalizer}{newer}, \
+                 but this pelicode has {current}; update pelicode"
+            );
+        }
+        if normalizer < current {
+            bail!(
+                "{reference}: the snapshot was built with normalizer version {normalizer}{newer}, \
+                 but this pelicode has {current}; use a newer snapshot"
+            );
+        }
+    }
+    Ok(())
+}
+
+/// What the manifest of the snapshot `reference` says, without downloading it.
+pub fn info(reference: &Reference) -> Result<Info> {
+    let (layer, annotations) = match Registry::new(reference).manifest() {
+        Ok(found) => found,
+        Err(Failure::Unreachable(e)) | Err(Failure::Other(e)) => return Err(e),
+    };
+    Ok(Info {
+        digest: layer.digest,
+        size: layer.size,
+        annotations,
+    })
 }
 
 enum Failure {
@@ -230,8 +348,8 @@ impl<'a> Registry<'a> {
         }
     }
 
-    /// The layer of the manifest holding the snapshot.
-    fn snapshot_layer(&self) -> std::result::Result<Layer, Failure> {
+    /// The layer of the manifest holding the snapshot, and the annotations.
+    fn manifest(&self) -> std::result::Result<(Layer, BTreeMap<String, String>), Failure> {
         let url = format!(
             "{}/manifests/{}",
             self.reference.base(),
@@ -259,7 +377,8 @@ impl<'a> Registry<'a> {
             .iter()
             .map(|l| l.media_type.clone())
             .collect();
-        manifest
+        let annotations = manifest.annotations;
+        let layer = manifest
             .layers
             .into_iter()
             .find(|l| l.media_type == SNAPSHOT_MEDIA_TYPE)
@@ -273,8 +392,8 @@ impl<'a> Registry<'a> {
                         types.join(", ")
                     }
                 )
-                .into()
-            })
+            })?;
+        Ok((layer, annotations))
     }
 
     /// Downloads `layer`, checks its digest, and decompresses it to `path`.

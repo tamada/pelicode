@@ -209,6 +209,10 @@ struct SnapshotArgs {
     /// Replace the snapshot file if it exists.
     #[arg(long)]
     force: bool,
+    /// Also write the annotations to give the snapshot in a registry, as an annotation file
+    /// of ORAS (`oras push --annotation-file`).
+    #[arg(long, value_name = "FILE")]
+    annotations: Option<PathBuf>,
     /// Format of the summary.
     #[arg(short, long, value_enum, default_value_t = SummaryFormat::Text)]
     format: SummaryFormat,
@@ -221,6 +225,13 @@ struct PullArgs {
     /// Also copy the snapshot to this file.
     #[arg(short, long)]
     out: Option<PathBuf>,
+    /// Only show what the registry says about the snapshot (digest, size, annotations),
+    /// without downloading it.
+    #[arg(long, conflicts_with = "out")]
+    info: bool,
+    /// Format of --info.
+    #[arg(short, long, value_enum, default_value_t = SummaryFormat::Text)]
+    format: SummaryFormat,
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -389,12 +400,33 @@ fn snapshot(args: SnapshotArgs, settings: Option<&settings::Loaded>) -> Result<(
         ),
         SummaryFormat::Json => println!("{}", serde_json::to_string_pretty(&summary)?),
     }
+    if let Some(path) = args.annotations {
+        let file = serde_json::json!({ "$manifest": oci::annotations(&summary) });
+        std::fs::write(&path, serde_json::to_string_pretty(&file)? + "\n")
+            .with_context(|| format!("cannot write {}", path.display()))?;
+    }
     Ok(())
 }
 
 /// `pelicode pull`: fetches a snapshot into the cache.
 fn pull(args: PullArgs) -> Result<()> {
     let reference: oci::Reference = args.reference.parse()?;
+    if args.info {
+        let info = oci::info(&reference)?;
+        match args.format {
+            SummaryFormat::Text => {
+                println!("{reference}");
+                println!("  digest: {}", info.digest);
+                println!("  size: {:.1} MB", info.size as f64 / 1024.0 / 1024.0);
+                for (key, value) in &info.annotations {
+                    let key = key.strip_prefix(oci::ANNOTATION_PREFIX).unwrap_or(key);
+                    println!("  {key}: {value}");
+                }
+            }
+            SummaryFormat::Json => println!("{}", serde_json::to_string_pretty(&info)?),
+        }
+        return Ok(());
+    }
     let fetched = oci::fetch(&reference, &oci::cache_dir()?)?;
     eprintln!(
         "{} {reference} ({})",
