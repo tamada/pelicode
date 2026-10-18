@@ -182,3 +182,7 @@ pelicode scan --git origin/main...HEAD --db pelicode.db --fail-on-match
 - **Index your own projects** with `pelicode index`, so that copies between your projects are found too, and exclude a project from its own scan with `--exclude local:NAME`. See [index](/usage#index).
 - **Tune the search.** `--threshold`, `--stop-packages` and `--min-shared` trade missed copies against false alarms. See [scan](/usage#scan).
 - **Look inside.** `pelicode extract upload.py --tokens N1` shows how a function looks after normalization. See [extract](/usage#extract).
+- **Keep the options in the repository.** A `.pelicode.yaml` (or `.pelicode.json5`) at the root of the project holds the database, the threshold, the excluded packages and paths, and so on, so that `pelicode scan` needs no options. See [Settings File](/usage#-settings-file).
+- **Check pull requests.** The GitHub Action [pelicode-action](https://github.com/tamada/pelicode-action) runs `pelicode scan` on the changes of each pull request and shows the candidates through code scanning. See [GitHub Action](/usage#-github-action).
+- **Share the database.** `pelicode snapshot` writes a copy for checking only, which can be published in an OCI registry; others then check against it with `--db oci://REGISTRY/REPOSITORY:TAG` without building one. See [snapshot](/usage#snapshot) and [pull](/usage#pull).
+- **Keep the database small.** After indexing versions again, `pelicode clean` removes the files no version refers to any more and shrinks the file. See [clean](/usage#clean).

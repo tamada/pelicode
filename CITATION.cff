@@ -1,0 +1,23 @@
+cff-version: 1.2.0
+message: If you use pelicode, please cite it as below.
+type: software
+title: "pelicode: Know where your code came from"
+abstract: >-
+  pelicode extracts functions with Tree-sitter, normalizes and hashes them,
+  stores the features of published open-source packages in a database without
+  their source code, and reports similar code candidates to review, with their
+  sources and licenses.
+authors:
+  - family-names: Tamada
+    given-names: Haruaki
+    affiliation: Kyoto Sangyo University
+repository-code: https://github.com/tamada/pelicode
+url: https://tamada.github.io/pelicode/
+license: MIT
+version: 0.1.0
+keywords:
+  - code provenance
+  - code clone detection
+  - software theft
+  - license compliance
+  - tree-sitter
