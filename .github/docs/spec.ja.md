@@ -255,7 +255,7 @@ winnowing の性質として、w + k − 1 トークン以上の共通部分を�
 
 PyPI の 26 パッケージ（77,084 関数）では、231 MB の DB から 174 MB のスナップショットができ、zstd（`-19`）で圧縮すると 54 MB になった。どちらに対しても `scan` は同じ候補を報告する。
 
-スナップショットは zstd で圧縮し、OCI アーティファクトとして quay.io（`quay.io/tama5/pelicode-db`）に `<NAME>-YYYYMMDD` と `<NAME>-latest` のタグで公開する。`just snapshot_push` が [ORAS](https://oras.land/) で push する。
+スナップショットは zstd で圧縮し、OCI アーティファクトとして quay.io（`quay.io/tama5/pelicode-db`）に `<NAME>-YYYYMMDD` と `<NAME>-latest` のタグで公開する。`just snapshot_push` が [ORAS](https://oras.land/) で push する。`snapshot` ワークフローが毎月1日に一から作り直す。対象は、PyPI と crates.io のダウンロード数上位 500 件と、Maven Central・Go・RubyGems については `.github/snapshots/` の一覧にあるパッケージである。日付のタグは残すので、実験では使ったスナップショットを指定できる。
 
 取得は pelicode 自身が行う。`pelicode pull oci://REGISTRY/REPOSITORY:TAG` のほか、`scan`・`stats`・`export` の `--db` にこの形式を書いてもよい。OCI の配布 API を使い、公開リポジトリには匿名トークンで接続する。メディアタイプ `application/vnd.pelicode.snapshot.v1.sqlite+zstd` のレイヤーを取得し、ダイジェストと大きさで検証してから展開する。ダウンロードの前に、マニフェストの注釈を読む。注釈は `pelicode snapshot --annotations` が `oras push` 用に書き出すもので、pelicode・テーブル構成・正規化の版、特徴量のパラメータ、フィンガープリントのレベル、エコシステム、件数（`io.github.tamada.pelicode.*`）と、`org.opencontainers.image.created` からなる。テーブル構成が新しいか、正規化の版が異なるスナップショットは、対処（pelicode の更新か、新しいスナップショットの利用）を示して拒否する。`pelicode pull --info` は、ダウンロードせずに注釈を表示する。スナップショットはダイジェストごとにキャッシュする（`$PELICODE_CACHE_DIR`、なければ利用者のキャッシュディレクトリ）。タグが同じダイジェストを指していればマニフェストを1回取得するだけで済み、レジストリに接続できないときは、前回そのタグが指していたスナップショットを使う。
 
