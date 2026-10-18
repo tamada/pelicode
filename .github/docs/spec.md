@@ -255,7 +255,7 @@ Checking code needs a reference database, but building one takes hours, so it is
 
 With 26 PyPI packages (77,084 functions), the database of 231 MB gives a snapshot of 174 MB, and 54 MB compressed with zstd (`-19`); `scan` reports the same candidates with either.
 
-Snapshots are published as OCI artifacts in quay.io (`quay.io/tama5/pelicode-db`), compressed with zstd, with tags `<NAME>-YYYYMMDD` and `<NAME>-latest`; `just snapshot_push` pushes them with [ORAS](https://oras.land/). The `snapshot` workflow builds them from scratch on the first day of every month: the 500 most downloaded packages of PyPI and crates.io, and the packages listed in `.github/snapshots/` for Maven Central, Go and RubyGems. Dated tags are kept, so that experiments can refer to the snapshot they used.
+Snapshots are published as OCI artifacts in quay.io (`quay.io/tama5/pelicode-db`), compressed with zstd, with tags `<NAME>-YYYYMMDD` and `<NAME>-latest`; `just snapshot_push` pushes them with [ORAS](https://oras.land/). The `snapshot` workflow builds them from scratch on the first day of every month: the 500 best-known packages of each ecosystem (`--top 500`). Dated tags are kept, so that experiments can refer to the snapshot they used.
 
 pelicode fetches them itself: `pelicode pull oci://REGISTRY/REPOSITORY:TAG`, or any `--db` of that form for `scan`, `stats` and `export`. It uses the OCI distribution API with an anonymous token for public repositories, takes the layer of media type `application/vnd.pelicode.snapshot.v1.sqlite+zstd`, checks it against its digest and size, and decompresses it. Before downloading, it reads the annotations of the manifest, which `pelicode snapshot --annotations` writes for `oras push` (the versions of pelicode, of the table layout and of the normalizer, the feature parameters, the fingerprint levels, the ecosystems and the counts, under `io.github.tamada.pelicode.*`, and `org.opencontainers.image.created`): a snapshot with a newer table layout or another normalizer version is refused with what to do (update pelicode, or use a newer snapshot). `pelicode pull --info` shows the annotations without downloading. Snapshots are cached by digest (`$PELICODE_CACHE_DIR`, else the cache directory of the user); a tag that still points to the same digest costs one request for the manifest, and when the registry cannot be reached, the snapshot the tag pointed to last time is used.
 
@@ -272,7 +272,7 @@ For each package:
 5. **Extract and index**: extract the features of the files in parallel, and store them.
 6. **Record**: when a step from 3 on fails, record the status `failed` and the error.
 
-Packages are given by name (`NAME[@VERSION]` and the like), in a list file (`--list`), or as the N most downloaded ones (`--top`, PyPI and crates.io only); duplicates are dropped.
+Packages are given by name (`NAME[@VERSION]` and the like), in a list file (`--list`), or as the N best-known ones (`--top`); duplicates are dropped.
 
 ### 6.2 Per Repository
 
@@ -286,7 +286,7 @@ Packages are given by name (`NAME[@VERSION]` and the like), in a list file (`--l
 | License | `license_expression`, classifiers, `license` | `<licenses>` of the POM (up to 5 parent POMs) | Text of the LICENSE file | `licenses` | `license` (`/` read as `OR`) |
 | Publication time | `upload_time_iso_8601` | `Last-Modified` of the sources jar | `Time` of `.info` | `version_created_at` | `created_at` |
 | Repository URL | `project_urls` | `<scm><url>` / `<url>` of the POM | `Origin.URL` of `.info` | `source_code_uri` / `homepage_uri` | `repository` |
-| Top N | hugovk/top-pypi-packages | none | none | none | All-time downloads |
+| Top N | Downloads, from hugovk/top-pypi-packages | Dependent repositories, from ecosyste.ms | Dependent repositories, from ecosyste.ms | Downloads, from ecosyste.ms | All-time downloads |
 
 - PyPI names are normalized as defined by PEP 503.
 - Go module paths are escaped as the module proxy requires: an upper-case letter becomes `!` and the lower-case letter.

@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       top:
-        description: Number of the most downloaded packages of pypi and crates
+        description: Number of the best-known packages of each ecosystem
         required: false
         default: "500"
 
@@ -62,11 +62,7 @@ jobs:
       - name: Crawl
         run: |
           mkdir -p "$WORK"
-          case "$ECOSYSTEM" in
-            pypi | crates) source=(--top "$TOP") ;;
-            *) source=(--list ".github/snapshots/$ECOSYSTEM.txt") ;;
-          esac
-          pelicode crawl "$ECOSYSTEM" "${source[@]}" --db "$WORK/full.db" \
+          pelicode crawl "$ECOSYSTEM" --top "$TOP" --db "$WORK/full.db" \
             --contact "$CONTACT" --no-config || echo "::warning::some $ECOSYSTEM packages failed"
           pelicode stats --db "$WORK/full.db" --refresh --no-config
 

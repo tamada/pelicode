@@ -122,7 +122,7 @@ Every command that uses a database takes `--db <FILE>` (default: `pelicode.db`);
 
 ```bash
 pelicode crawl pypi requests numpy@2.1.0         # NAME[@VERSION]
-pelicode crawl pypi --top 100                    # the 100 most downloaded packages (PyPI and crates.io only)
+pelicode crawl pypi --top 100                    # the 100 best-known packages
 pelicode crawl maven com.google.code.gson:gson:2.11.0
 pelicode crawl go golang.org/x/mod@v0.20.0
 pelicode crawl rubygems thor@1.3.0
@@ -136,7 +136,7 @@ pelicode crawl pypi --updates                    # new versions of the PyPI pack
 - Archives are read in memory and discarded; nothing is unpacked to disk.
 - Requests are sent one at a time, by default at least one second apart (`--delay-ms`). When crawling many packages, put a contact URL or e-mail address in the User-Agent with `--contact`.
 - Failures are recorded in the database. If any package fails, the exit status is 1.
-- For PyPI, the download ranking used by `--top` is not an official PyPI service but [hugovk/top-pypi-packages](https://github.com/hugovk/top-pypi-packages). For crates.io, it is the all-time download count of crates.io.
+- For PyPI, the download ranking used by `--top` is not an official PyPI service but [hugovk/top-pypi-packages](https://github.com/hugovk/top-pypi-packages). For crates.io, it is the all-time download count of crates.io. Maven Central, the Go module proxy and RubyGems publish no ranking of their own, so `--top` asks [ecosyste.ms](https://ecosyste.ms/) for them: RubyGems by downloads, Maven Central and Go, which publish no download counts, by the number of repositories that depend on a package. The aim is well-known packages, not one ranking across repositories.
 - The [crates.io data access policy](https://crates.io/data-access) allows at most one API request per second and strongly suggests a way to contact you; give `--contact` and keep `--delay-ms` at 1000 or more when crawling crates.io.
 
 ### index: registering a local project

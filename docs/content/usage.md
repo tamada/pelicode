@@ -62,7 +62,7 @@ Without a version, the latest release is fetched.
 | Option | Default | Description |
 | --- | --- | --- |
 | `--list <FILE>` | | Read packages from a file, one per line. `#` starts a comment |
-| `--top <N>` | | Also crawl the N most downloaded packages (`pypi` and `crates` only) |
+| `--top <N>` | | Also crawl the N best-known packages (see below for the ranking of each ecosystem) |
 | `--updates` | | Also check every package of the ecosystem already in the database for a newer version, and crawl the new ones |
 | `--force` | | Re-index versions that are already in the database |
 | `--refresh-stats` | | Recount common hashes afterwards (see [`stats`](#stats)) |
@@ -98,7 +98,7 @@ Good to know:
 - `--updates` keeps a database current, one request per package already in it; the time of the last check is recorded per ecosystem and shown at the next one.
 - A failed package does not stop the others. Failures are recorded in the database, and the exit status is 1 if any package failed.
 - Requests are sent one at a time. Be gentle with public services: keep the delay, and set `--contact` when crawling many packages.
-- For PyPI, the ranking used by `--top` comes from [hugovk/top-pypi-packages](https://github.com/hugovk/top-pypi-packages), not from PyPI itself; for crates.io, it is the all-time download count of crates.io. Maven Central, the Go module proxy and RubyGems have no such ranking; use `--list` for them.
+- For PyPI, the ranking used by `--top` comes from [hugovk/top-pypi-packages](https://github.com/hugovk/top-pypi-packages), not from PyPI itself; for crates.io, it is the all-time download count of crates.io. Maven Central, the Go module proxy and RubyGems publish no ranking of their own, so `--top` asks [ecosyste.ms](https://ecosyste.ms/) for them: RubyGems by downloads, Maven Central and Go, which publish no download counts, by the number of repositories that depend on a package. The aim is well-known packages, not one ranking across repositories.
 - The [crates.io data access policy](https://crates.io/data-access) allows at most one API request per second and strongly suggests a way to contact you. Give `--contact` when crawling crates.io, and keep `--delay-ms` at 1000 or more.
 
 ### `index`

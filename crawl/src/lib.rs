@@ -5,6 +5,7 @@
 
 pub mod archive;
 pub mod crates;
+pub mod ecosystems;
 pub mod go;
 pub mod http;
 pub mod license;
