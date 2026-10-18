@@ -134,7 +134,8 @@ impl FromStr for Ecosystem {
 pub enum Digest {
     /// SHA-256 of the archive (hex).
     Sha256(String),
-    /// SHA-1 of the archive (hex).
+    /// SHA-1 of the archive (hex), the only checksum most Maven Central
+    /// artifacts have (`.sha256` and `.sha512` are optional and rare).
     Sha1(String),
     /// Go checksum database `h1:` hash of the module zip.
     GoH1(String),
@@ -347,6 +348,11 @@ impl Crawler {
 fn verify(digest: &Digest, body: &[u8], sha256: &str) -> Result<(), Error> {
     let (expected, actual) = match digest {
         Digest::Sha256(expected) => (expected, sha256.to_string()),
+        // SHA-1 is broken against collisions, but here it only detects corrupt
+        // or truncated downloads: the archive and its checksum come from the
+        // same server, so no checksum would stop that server from lying, and
+        // replacing a published archive with another of the same SHA-1 needs a
+        // second preimage. Authenticity would need the PGP signatures (`.asc`).
         Digest::Sha1(expected) => (expected, pelicode_core::hash::to_hex(&Sha1::digest(body))),
         Digest::GoH1(expected) => (expected, go::dirhash_h1(body)?),
     };
