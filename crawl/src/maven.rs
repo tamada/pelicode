@@ -156,8 +156,12 @@ fn text(body: &[u8], url: &str) -> Result<String, Error> {
     String::from_utf8(body.to_vec()).map_err(|_| Error::Metadata(format!("{url}: not UTF-8")))
 }
 
-/// The release version in `maven-metadata.xml`: `<release>`, else `<latest>`, else
-/// the last of `<versions>`.
+/// The latest stable version in `maven-metadata.xml`: `<release>` when it is
+/// stable, else the last stable one of `<versions>`. When there is none,
+/// `<release>`, else `<latest>`, else the last of `<versions>`.
+///
+/// `<release>` names the last version deployed, which can be a pre-release
+/// (see [`is_prerelease`]).
 ///
 /// # Examples
 ///
@@ -166,21 +170,87 @@ fn text(body: &[u8], url: &str) -> Result<String, Error> {
 ///
 /// let xml = "<metadata><versioning><latest>2.0-SNAPSHOT</latest><release>1.9</release></versioning></metadata>";
 /// assert_eq!(latest_version(xml).as_deref(), Some("1.9"));
+///
+/// let xml = "<metadata><versioning><release>4.2.0-M2</release><versions>\
+///     <version>4.1.3</version><version>4.2.0-M1</version><version>4.2.0-M2</version>\
+///     </versions></versioning></metadata>";
+/// assert_eq!(latest_version(xml).as_deref(), Some("4.1.3"));
 /// ```
 pub fn latest_version(metadata: &str) -> Option<String> {
     let doc = Document::parse(metadata).ok()?;
     let versioning = child(doc.root_element(), "versioning")?;
-    ["release", "latest"]
-        .iter()
-        .find_map(|tag| child_text(versioning, tag))
-        .or_else(|| {
-            child(versioning, "versions")?
-                .children()
+    let release = child_text(versioning, "release");
+    if let Some(release) = release.as_deref()
+        && !is_prerelease(release)
+    {
+        return Some(release.to_string());
+    }
+    let versions: Vec<&str> = child(versioning, "versions")
+        .map(|v| {
+            v.children()
                 .filter(|n| n.has_tag_name("version"))
                 .filter_map(|n| n.text())
-                .next_back()
-                .map(String::from)
+                .collect()
         })
+        .unwrap_or_default();
+    versions
+        .iter()
+        .rev()
+        .find(|v| !is_prerelease(v))
+        .map(|v| v.to_string())
+        .or(release)
+        .or_else(|| child_text(versioning, "latest"))
+        .or_else(|| versions.last().map(|v| v.to_string()))
+}
+
+/// Whether a Maven version is a pre-release: its qualifier is one of `alpha`,
+/// `beta`, `milestone`, `rc`, `cr`, `snapshot`, `preview`, `pre`, `ea` or `dev`,
+/// or `a`, `b` or `m` followed by a number. Other qualifiers, such as `jre`,
+/// `android`, `Final`, `RELEASE` and `GA`, are stable.
+///
+/// # Examples
+///
+/// ```
+/// use pelicode_crawl::maven::is_prerelease;
+///
+/// for v in ["4.2.0-M2", "1.0-SNAPSHOT", "2.0.0-RC1", "6.0.0.CR2", "1.1.0-alpha03", "3.0-beta-2", "1.0b1"] {
+///     assert!(is_prerelease(v), "{v}");
+/// }
+/// for v in ["33.4.0-jre", "33.4.0-android", "5.6.15.Final", "2.7.18.RELEASE", "1.0-GA", "2.11.0", "1.0.0-m"] {
+///     assert!(!is_prerelease(v), "{v}");
+/// }
+/// ```
+pub fn is_prerelease(version: &str) -> bool {
+    const WORDS: [&str; 10] = [
+        "alpha",
+        "beta",
+        "milestone",
+        "rc",
+        "cr",
+        "snapshot",
+        "preview",
+        "pre",
+        "ea",
+        "dev",
+    ];
+    let lower = version.to_ascii_lowercase();
+    lower.split(['.', '-', '_']).any(|token| {
+        // Runs of letters and of digits: "m2" is ["m", "2"], "beta3" ["beta", "3"].
+        let mut runs: Vec<(bool, &str)> = Vec::new();
+        let mut start = 0;
+        let bytes = token.as_bytes();
+        for i in 1..=bytes.len() {
+            if i == bytes.len() || bytes[i].is_ascii_digit() != bytes[i - 1].is_ascii_digit() {
+                runs.push((bytes[start].is_ascii_digit(), &token[start..i]));
+                start = i;
+            }
+        }
+        runs.iter().enumerate().any(|(i, &(digits, run))| {
+            !digits
+                && (WORDS.contains(&run)
+                    || (matches!(run, "a" | "b" | "m") && runs.get(i + 1).is_some_and(|&(d, _)| d)))
+        })
+    })
 }
 
 /// What pelicode reads from a POM.
@@ -334,6 +404,18 @@ mod tests {
         assert_eq!(latest_version(xml).as_deref(), Some("1.9"));
         let xml = "<metadata><versioning><versions><version>1</version><version>2</version></versions></versioning></metadata>";
         assert_eq!(latest_version(xml).as_deref(), Some("2"));
+    }
+
+    #[test]
+    fn skips_prereleases() {
+        // <release> is a milestone: the last stable version wins.
+        let xml = "<metadata><versioning><release>3.0-M1</release><versions>\
+            <version>2.9</version><version>3.0-M1</version></versions></versioning></metadata>";
+        assert_eq!(latest_version(xml).as_deref(), Some("2.9"));
+        // Only pre-releases: <release> anyway.
+        let xml = "<metadata><versioning><release>1.0-RC2</release><versions>\
+            <version>1.0-RC1</version><version>1.0-RC2</version></versions></versioning></metadata>";
+        assert_eq!(latest_version(xml).as_deref(), Some("1.0-RC2"));
     }
 
     #[test]
