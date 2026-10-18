@@ -18,7 +18,7 @@ pelicode scan --git origin/main...HEAD --db pelicode.db --fail-on-match
 - **What it finds**: functions in the pull request that are identical or similar to functions of published packages, with the package, version, file, lines and license of each.
 - **What happens next**: a reviewer compares the two, and asks for attribution, a rewrite, or nothing.
 - **Works today**: the command above; with `--fail-on-match`, the job fails when there is something to review. The database, the thresholds and what to leave out can be kept in a `.pelicode.yaml` committed to the repository.
-- **With the GitHub Action**: `uses: tamada/pelicode@vX.Y.Z` checks the changes of each pull request, shows the candidates as notes on the functions through code scanning, and lists them in the summary of the job (see [Usage](https://tamada.github.io/pelicode/usage/#-github-action)).
+- **With the GitHub Action**: `uses: tamada/pelicode-action@vX.Y.Z` checks the changes of each pull request, shows the candidates as notes on the functions through code scanning, and lists them in the summary of the job (see [Usage](https://tamada.github.io/pelicode/usage/#-github-action)).
 - **Missing**: a way for CI to obtain a database (see [Where the database comes from](#where-the-database-comes-from)).
 
 ## 2. Checking code before committing

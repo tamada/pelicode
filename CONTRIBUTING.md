@@ -44,14 +44,14 @@ core  ←  db  ←  detect  ←  cli
 | `crawl` (pelicode-crawl) | Fetching packages from public repositories |
 | `cli` (pelicode-cli) | The `pelicode` command, settings files, git diffs, output formats, SARIF |
 
-Other places: `action.yml` and `action/` (the GitHub Action), `.github/workflows/` (CI and releases), `.github/docs/` (specification and scenarios), `docs/` (the Hugo site), `Containerfile`, `Justfile`.
+Other places: `.github/workflows/` (CI and releases), `.github/docs/` (specification and scenarios), `docs/` (the Hugo site), `Containerfile`, `Justfile`. The GitHub Action is in its own repository, [tamada/pelicode-action](https://github.com/tamada/pelicode-action).
 
 ## Making a Change
 
 1. Open or pick an [issue](https://github.com/tamada/pelicode/issues), so that the direction can be discussed first for anything larger than a fix.
 2. Work on a branch; `main` only changes through pull requests.
 3. Keep commits focused, with a subject in the imperative ("Add ...", "Fix ...") and a body that says why, not only what. `Closes #N` in a commit or the pull request closes the issue when merged.
-4. Before opening a pull request, run `just test` and `just doc`. CI runs format, clippy, build and tests on Linux, macOS and Windows (x64 and arm64), and the action on a sample repository.
+4. Before opening a pull request, run `just test` and `just doc`. CI runs format, clippy, build and tests on Linux, macOS and Windows (x64 and arm64).
 5. Update the documentation that the change affects (see [Documentation](#documentation)).
 
 ### Code Style

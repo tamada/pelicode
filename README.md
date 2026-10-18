@@ -205,7 +205,7 @@ pelicode looks for it in the current directory and above, up to the root of the 
 
 ### GitHub Action
 
-The repository is also a GitHub Action that checks pull requests and shows the candidates through code scanning:
+[pelicode-action](https://github.com/tamada/pelicode-action) is a GitHub Action that checks pull requests and shows the candidates through code scanning:
 
 ```yaml
 # .github/workflows/pelicode.yaml
@@ -223,12 +223,12 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0       # pelicode compares the pull request with its base
-      - uses: tamada/pelicode@v0.1.0
+      - uses: tamada/pelicode-action@v0.1.0
         with:
           database-url: https://example.org/pelicode/pelicode.db
 ```
 
-See [Usage](https://tamada.github.io/pelicode/usage/#-github-action) for its inputs.
+See [pelicode-action](https://github.com/tamada/pelicode-action) for its inputs.
 
 ### extract / export: looking inside
 

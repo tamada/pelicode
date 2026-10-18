@@ -375,7 +375,7 @@ The paths matched by `exclude.paths` are the paths `scan` reports: relative to t
 
 ## 🤖 GitHub Action
 
-The repository is also a GitHub Action that checks the functions changed by a pull request or a push, shows the candidates in the pull request through GitHub code scanning, and lists them in the summary of the job.
+[pelicode-action](https://github.com/tamada/pelicode-action) is a GitHub Action that checks the functions changed by a pull request or a push, shows the candidates in the pull request through GitHub code scanning, and lists them in the summary of the job.
 
 ```yaml
 # .github/workflows/pelicode.yaml
@@ -393,14 +393,14 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0       # pelicode compares the pull request with its base
-      - uses: tamada/pelicode@v0.1.0
+      - uses: tamada/pelicode-action@v0.1.0
         with:
           database-url: https://example.org/pelicode/pelicode.db
 ```
 
 What it does:
 
-1. **Installs pelicode**: the release of the action's tag (`tamada/pelicode@v0.1.0` installs pelicode 0.1.0); used at a branch, it builds the action's own source with Cargo.
+1. **Installs pelicode**: the latest release for the runner's platform, the release given by `pelicode-version`, or, with `pelicode-version: source`, pelicode built with Cargo at `pelicode-ref`.
 2. **Downloads the database** from `database-url`, if given.
 3. **Scans** the changes of the pull request (`base...head`) or of the push (`before..after`); other events, and pushes creating a branch, check the whole repository. The settings file of the repository applies.
 4. **Uploads** the SARIF log to code scanning, where each candidate is a note on the function, and writes the candidates to the summary of the job.
@@ -418,7 +418,8 @@ What it does:
 | `fail-on-match` | `false` | Fail when candidates are found |
 | `upload-sarif` | `true` | Upload to code scanning |
 | `sarif-file` | `pelicode.sarif` | Where to write the SARIF log |
-| `pelicode-version` | the action's tag, else `source` | Release to install, or `source` |
+| `pelicode-version` | `latest` | Release to install (`0.1.0`, `latest`), or `source` |
+| `pelicode-ref` | `main` | Branch, tag or commit of tamada/pelicode to build with `source` |
 | `pelicode-path` | | An installed binary to use |
 
 The outputs are `candidates`, the number of functions with candidates, and `sarif-file`.

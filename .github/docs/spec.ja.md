@@ -413,15 +413,15 @@ crawl:
 
 ### 8.3 GitHub Action
 
-このリポジトリは、PR を検査する composite な GitHub Action（`action.yml`）でもある。
+PR を検査する composite な GitHub Action は、別のリポジトリ [tamada/pelicode-action](https://github.com/tamada/pelicode-action) にあり、pelicode とは別に版を付ける（`uses: tamada/pelicode-action@vX.Y.Z`）。
 
-1. **インストール**: Action をタグで使った場合（`uses: tamada/pelicode@vX.Y.Z`）は、そのリリースから実行環境のプラットフォームに合うバイナリを取得する。それ以外の ref では、Action 自身のソースを Cargo でビルドする。`pelicode-path` で既存のバイナリも指定できる。
+1. **インストール**: pelicode の最新のリリース（または `pelicode-version` で指定したリリース）から、実行環境のプラットフォームに合うバイナリを取得する。`pelicode-version: source` では、`pelicode-ref` の pelicode を Cargo でビルドする。`pelicode-path` で既存のバイナリも指定できる。
 2. **DB**: `database-url` があればダウンロードする。なければ `database`、設定ファイル、`pelicode.db` の順に使う。
 3. **検査**: PR なら `base...head`、push なら `before..after`、それ以外のイベントとブランチを作る push ではリポジトリ全体を、`pelicode scan -f sarif` で検査する。`range`、`paths`、`config`、`args` で上書きできる。
 4. **報告**: 候補のある関数の数を出力 `candidates` に、候補の一覧をジョブのサマリーに書く。`upload-sarif` が `false` でなければ、SARIF を Code Scanning にアップロードする（`github/codeql-action/upload-sarif`、カテゴリ `pelicode`）。
 5. **失敗**: `fail-on-match` を指定した場合だけ、アップロードの後に失敗させる（注釈が残るようにするため）。設定ファイルの `fail_on_match` があっても、アップロードの前には止めない。
 
-処理は `action/install.sh` と `action/scan.sh` にあり、workflow（`test_action`）が、関数をコピーしたリポジトリで Action を動かして出力を確かめる。
+処理はそのリポジトリの `action/install.sh` と `action/scan.sh` にあり、workflow（`test`）が pelicode をビルドし、関数をコピーしたリポジトリで Action を動かして出力を確かめる。
 
 ### 8.4 出力形式
 
@@ -528,7 +528,7 @@ pelicode-core、pelicode-db、pelicode-detect、pelicode-crawl はライブラ�
 | ディレクトリ・git の範囲の検査、text / JSON / CSV 出力 | 実装済み |
 | YAML・JSON5 の設定ファイル | 実装済み |
 | SARIF 出力 | 実装済み |
-| PR を検査する GitHub Action | 実装済み |
+| PR を検査する GitHub Action（tamada/pelicode-action） | 実装済み |
 | 検査するコードの依存パッケージの除外 | 実装済み |
 | データベースの掃除（`pelicode clean`） | 実装済み |
 | スナップショット（`pelicode snapshot`、quay.io の OCI アーティファクト） | 実装済み（公開は未実施） |

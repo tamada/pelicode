@@ -18,7 +18,7 @@ pelicode scan --git origin/main...HEAD --db pelicode.db --fail-on-match
 - **何が見つかるか**: PR の関数のうち、公開パッケージの関数と同一または類似のもの。パッケージ、バージョン、ファイル、行、ライセンスが添えられます。
 - **その後**: レビュアーが両者を見比べ、帰属表示を求める、書き直しを求める、問題なしとする、のいずれかを判断します。
 - **今できること**: 上のコマンドです。`--fail-on-match` を付けると、確認すべき候補があるときにジョブが失敗します。DB の場所、閾値、除外する対象は、リポジトリにコミットした `.pelicode.yaml` に書いておけます。
-- **GitHub Action**: `uses: tamada/pelicode@vX.Y.Z` で、PR ごとに変更を検査し、候補を Code Scanning で関数への注釈として表示し、ジョブのサマリーにも一覧を出します（[Usage](https://tamada.github.io/pelicode/usage/#-github-action) を参照）。
+- **GitHub Action**: `uses: tamada/pelicode-action@vX.Y.Z` で、PR ごとに変更を検査し、候補を Code Scanning で関数への注釈として表示し、ジョブのサマリーにも一覧を出します（[Usage](https://tamada.github.io/pelicode/usage/#-github-action) を参照）。
 - **足りないもの**: CI が DB を入手する手段（[DB をどこで作るか](#db-をどこで作るか)を参照）。
 
 ## 2. コミット前に手元で確かめる

@@ -205,7 +205,7 @@ pelicode はカレントディレクトリから上に向かって、git リポ�
 
 ### GitHub Action
 
-このリポジトリは、PR を検査して、候補を Code Scanning で表示する GitHub Action としても使えます。
+[pelicode-action](https://github.com/tamada/pelicode-action) は、PR を検査して、候補を Code Scanning で表示する GitHub Action です。
 
 ```yaml
 # .github/workflows/pelicode.yaml
@@ -223,12 +223,12 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0       # PR と base を比べるため
-      - uses: tamada/pelicode@v0.1.0
+      - uses: tamada/pelicode-action@v0.1.0
         with:
           database-url: https://example.org/pelicode/pelicode.db
 ```
 
-入力の一覧は [Usage](https://tamada.github.io/pelicode/usage/#-github-action)（英語）を見てください。
+入力の一覧は [pelicode-action](https://github.com/tamada/pelicode-action)（英語）を見てください。
 
 ### extract / export: 中身の確認
 

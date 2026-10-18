@@ -44,14 +44,14 @@ core  ←  db  ←  detect  ←  cli
 | `crawl`（pelicode-crawl） | 公開リポジトリからのパッケージの取得 |
 | `cli`（pelicode-cli） | `pelicode` コマンド、設定ファイル、git の差分、出力形式、SARIF |
 
-そのほか、`action.yml` と `action/`（GitHub Action）、`.github/workflows/`（CI とリリース）、`.github/docs/`（仕様と利用シナリオ）、`docs/`（Hugo サイト）、`Containerfile`、`Justfile` があります。
+そのほか、`.github/workflows/`（CI とリリース）、`.github/docs/`（仕様と利用シナリオ）、`docs/`（Hugo サイト）、`Containerfile`、`Justfile` があります。GitHub Action は別のリポジトリ [tamada/pelicode-action](https://github.com/tamada/pelicode-action) にあります。
 
 ## 変更の進め方
 
 1. [issue](https://github.com/tamada/pelicode/issues) を立てるか選んでください。修正より大きな変更は、先に方向性を相談できるようにするためです。
 2. ブランチで作業してください。`main` はプルリクエスト経由でのみ変更します。
 3. コミットはまとまりごとに分け、件名は命令形（"Add ..."、"Fix ..."）で、本文には何をしたかだけでなく理由を書いてください。コミットかプルリクエストに `Closes #N` と書くと、マージ時に issue が閉じます。
-4. プルリクエストを作る前に `just test` と `just doc` を実行してください。CI では、Linux、macOS、Windows（x64 と arm64）でフォーマット、clippy、ビルド、テストを行い、サンプルリポジトリで Action を動かします。
+4. プルリクエストを作る前に `just test` と `just doc` を実行してください。CI では、Linux、macOS、Windows（x64 と arm64）でフォーマット、clippy、ビルド、テストを行います。
 5. 変更に関係するドキュメントを更新してください（[ドキュメント](#ドキュメント) を参照）。
 
 ### コーディングスタイル
