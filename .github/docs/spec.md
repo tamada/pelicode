@@ -244,6 +244,19 @@ For each hash, the number of packages containing it (several versions of a packa
 
 Indexing a version again replaces its file list, which may leave files that no version links to. `pelicode clean` removes them with their functions, exact hashes, fingerprints, MinHash signatures and LSH buckets, in one transaction, then gives the space back with SQLite `VACUUM` (with a checkpoint of the write-ahead log before and after). The hash statistics need no recount, since they count linked files only.
 
+### 5.6 Snapshots
+
+Checking code needs a reference database, but building one takes hours, so it is built in one place and distributed (see the scenarios). `pelicode snapshot` writes a copy for checking only:
+
+- It keeps what `scan` reads: packages, versions, files, functions, exact hashes, fingerprints, LSH buckets, and the hash statistics, recounted for what the snapshot holds. The fingerprint levels go to `meta`.
+- It drops the MinHash signatures (used by indexing and `export` only), the pending hashes of the incremental statistics, and the versions whose crawl failed.
+- `--ecosystem` keeps some ecosystems only, and `--latest` the latest indexed version of each package (by publication time, then crawl time).
+- It is one file without a write-ahead log, marked as a snapshot in `meta`; indexing into it is refused.
+
+With 26 PyPI packages (77,084 functions), the database of 231 MB gives a snapshot of 174 MB, and 54 MB compressed with zstd (`-19`); `scan` reports the same candidates with either.
+
+Snapshots are published as OCI artifacts in quay.io (`quay.io/tama5/pelicode-db`), compressed with zstd, with tags `<NAME>-YYYYMMDD` and `<NAME>-latest`; `just snapshot_push` and `just snapshot_pull` push and pull them with [ORAS](https://oras.land/).
+
 ## 6. Collection (pelicode-crawl)
 
 ### 6.1 Common Steps
@@ -365,6 +378,7 @@ Code that matches a library the checked project depends on is expected, so depen
 | `pelicode index <PATHS>...` | Index local directories as one package version; the ecosystem is `local` by default |
 | `pelicode stats` | Show database statistics and the most common hashes; `--refresh` recounts them |
 | `pelicode clean` | Remove files and functions no version refers to any more, then shrink the file (`--dry-run` only counts them) |
+| `pelicode snapshot -o <FILE>` | Write a copy of the database for checking only (§5.6) |
 | `pelicode scan [PATHS]...` | Search for candidates (§7) |
 | `pelicode extract <PATHS>...` | Show functions and their features, without a database |
 | `pelicode export` | List the functions stored in a database |
@@ -517,6 +531,7 @@ A command that runs evaluation experiments (`pelicode eval`) is not implemented 
 | GitHub Action for pull requests | Done |
 | Leaving out the dependencies of the checked code | Done |
 | Database cleanup (`pelicode clean`) | Done |
+| Snapshots (`pelicode snapshot`, OCI artifacts in quay.io) | Done (none published yet) |
 | CI, release, container, documentation site | Done (no release made yet) |
 
 ### 12.2 Not Implemented Yet
@@ -524,7 +539,7 @@ A command that runs evaluation experiments (`pelicode eval`) is not implemented 
 | Feature | Description |
 | --- | --- |
 | Detection of new versions | `list_updates(since)` with the RSS feeds of crates.io, PyPI updates, index.golang.org, ... |
-| Snapshots | Creating (`pelicode snapshot`) and distributing databases without source code |
+| Fetching snapshots | Letting `scan`, the settings file and the GitHub Action fetch a published snapshot, with caching |
 | Evaluation | `pelicode eval` and the generation of evaluation data (§11.1) |
 | No dependency on the git command | Reading diffs with gix, the Rust implementation of git |
 

@@ -244,6 +244,19 @@ winnowing の性質として、w + k − 1 トークン以上の共通部分を�
 
 同じバージョンを再索引するとファイル一覧が置き換わり、どのバージョンからも参照されないファイルが残ることがある。`pelicode clean` は、それらを関数、完全ハッシュ、フィンガープリント、MinHash、LSH バケットとともに1つのトランザクションで削除し、SQLite の `VACUUM` で容量を回収する（前後で WAL を本体に書き戻す）。出現パッケージ数の集計は参照されているファイルだけを数えるので、集計し直す必要はない。
 
+### 5.6 スナップショット
+
+コードの検査には参照用 DB が必要だが、作るには数時間かかる。そのため DB は1か所で作って配布する（利用シナリオを参照）。`pelicode snapshot` は、検査専用のコピーを書き出す。
+
+- `scan` が読むもの、つまりパッケージ、バージョン、ファイル、関数、完全ハッシュ、フィンガープリント、LSH バケット、出現パッケージ数の集計を残す。集計はスナップショットの内容で数え直す。フィンガープリントのレベルは `meta` に記録する。
+- MinHash の署名（索引と `export` だけが使う）、インクリメンタルな集計のための保留中のハッシュ、取得に失敗したバージョンは除く。
+- `--ecosystem` で一部のエコシステムだけを、`--latest` で各パッケージの最新の索引済みバージョン（公開日時、次に取得日時の順）だけを残せる。
+- WAL を使わない1つのファイルで、`meta` にスナップショットであることを記録する。スナップショットへの索引は拒否する。
+
+PyPI の 26 パッケージ（77,084 関数）では、231 MB の DB から 174 MB のスナップショットができ、zstd（`-19`）で圧縮すると 54 MB になった。どちらに対しても `scan` は同じ候補を報告する。
+
+スナップショットは zstd で圧縮し、OCI アーティファクトとして quay.io（`quay.io/tama5/pelicode-db`）に `<NAME>-YYYYMMDD` と `<NAME>-latest` のタグで公開する。`just snapshot_push` と `just snapshot_pull` が [ORAS](https://oras.land/) で push・pull する。
+
 ## 6. 収集（pelicode-crawl）
 
 ### 6.1 共通の処理手順
@@ -365,6 +378,7 @@ getter、`equals`、定型的な例外処理のように、多くのパッケー
 | `pelicode index <PATHS>...` | 手元のディレクトリを1つのパッケージのバージョンとして索引する。エコシステムの既定は `local` |
 | `pelicode stats` | データベースの統計と、ありふれたハッシュの一覧を表示する。`--refresh` で集計し直す |
 | `pelicode clean` | どのバージョンからも参照されなくなったファイルと関数を削除し、ファイルを縮める（`--dry-run` で件数だけを示す） |
+| `pelicode snapshot -o <FILE>` | 検査専用の DB のコピーを書き出す（§5.6） |
 | `pelicode scan [PATHS]...` | 候補を検索する（§7） |
 | `pelicode extract <PATHS>...` | データベースを使わずに、関数と特徴量を表示する |
 | `pelicode export` | データベースの関数を一覧する |
@@ -517,6 +531,7 @@ pelicode-core、pelicode-db、pelicode-detect、pelicode-crawl はライブラ�
 | PR を検査する GitHub Action | 実装済み |
 | 検査するコードの依存パッケージの除外 | 実装済み |
 | データベースの掃除（`pelicode clean`） | 実装済み |
+| スナップショット（`pelicode snapshot`、quay.io の OCI アーティファクト） | 実装済み（公開は未実施） |
 | CI、リリース、コンテナ、ドキュメントサイト | 実装済み（実際のリリースは未実施） |
 
 ### 12.2 未実装の機能
@@ -524,7 +539,7 @@ pelicode-core、pelicode-db、pelicode-detect、pelicode-crawl はライブラ�
 | 機能 | 内容 |
 | --- | --- |
 | 新しいバージョンの検知 | crates.io の RSS、PyPI の更新情報、index.golang.org などを使った `list_updates(since)` |
-| スナップショット | ソースコードを含まない配布用 DB の作成（`pelicode snapshot`）と配布 |
+| スナップショットの取得 | `scan`・設定ファイル・GitHub Action から公開済みのスナップショットを取得し、キャッシュすること |
 | 評価実験 | `pelicode eval` と評価データの生成（§11.1） |
 | git コマンドへの依存の解消 | gix（Rust 実装の git）による差分の取得 |
 

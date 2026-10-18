@@ -109,6 +109,7 @@ The first line is the location and name of the checked function. Each following 
 | `pelicode index <PATHS>...` | Index local directories as one package |
 | `pelicode stats` | Show database statistics and the hashes found in the most packages |
 | `pelicode clean` | Remove data no longer referenced, and shrink the database |
+| `pelicode snapshot -o <FILE>` | Write a copy of the database for checking only, to distribute |
 | `pelicode scan [PATHS]...` | Search for similar code candidates |
 | `pelicode extract <PATHS>...` | Show extracted functions and their features (no database) |
 | `pelicode export` | List the functions stored in the database |
@@ -274,7 +275,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow, adding a la
 ## Not implemented yet
 
 - Automatic detection of newly published versions (packages are currently given by name, by a list file or as the top N)
-- Distributable database snapshots (`pelicode snapshot`) and a command for evaluation experiments (`pelicode eval`)
+- Fetching published snapshots from `scan` and the GitHub Action, and a command for evaluation experiments (`pelicode eval`)
 - Fetching the most downloaded packages of Go, Maven Central and RubyGems
 
 ## License

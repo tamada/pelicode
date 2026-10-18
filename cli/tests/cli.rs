@@ -458,3 +458,84 @@ fn dependencies_are_left_out() {
     let reports: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert!(!reports.as_array().unwrap().is_empty());
 }
+
+#[test]
+fn snapshot_for_checking_only() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = db_arg(dir.path());
+    let src = format!("{FIXTURE}/src");
+    let lib = format!("{FIXTURE}/lib");
+    for (path, ecosystem, version) in [
+        (&src, "local", "1.0"),
+        (&src, "local", "2.0"),
+        (&lib, "pypi", "1.0"),
+    ] {
+        pelicode(&[
+            "index",
+            path,
+            "--db",
+            &db,
+            "--ecosystem",
+            ecosystem,
+            "--name",
+            "demo",
+            "--version",
+            version,
+        ]);
+    }
+
+    let out = dir
+        .path()
+        .join("snapshot.db")
+        .to_string_lossy()
+        .into_owned();
+    let args = [
+        "snapshot",
+        "--db",
+        &db,
+        "-o",
+        &out,
+        "--ecosystem",
+        "local",
+        "--latest",
+        "-f",
+        "json",
+    ];
+    let summary: serde_json::Value = serde_json::from_str(&pelicode(&args)).unwrap();
+    assert_eq!(
+        (summary["packages"].as_u64(), summary["versions"].as_u64()),
+        (Some(1), Some(1))
+    );
+    assert!(summary["functions"].as_u64() > Some(0));
+
+    // The file exists now.
+    let again = pelicode_in(dir.path(), &args);
+    assert!(!again.status.success());
+    let mut forced = args.to_vec();
+    forced.push("--force");
+    pelicode(&forced);
+
+    // Checking against the snapshot finds the indexed code ...
+    let scan = pelicode_in(dir.path(), &["scan", &src, "--db", &out, "-f", "json"]);
+    let reports: serde_json::Value = serde_json::from_slice(&scan.stdout).unwrap();
+    let occurrences: Vec<_> = reports
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|r| r["candidates"].as_array().unwrap())
+        .flat_map(|c| c["occurrences"].as_array().unwrap())
+        .collect();
+    assert!(!occurrences.is_empty());
+    assert!(
+        occurrences
+            .iter()
+            .all(|o| o["version"] == "2.0" && o["ecosystem"] == "local")
+    );
+    // ... but nothing can be indexed into it.
+    let index = pelicode_in(
+        dir.path(),
+        &["index", &lib, "--db", &out, "--name", "x", "--version", "1"],
+    );
+    assert!(!index.status.success());
+    assert!(String::from_utf8_lossy(&index.stderr).contains("snapshot"));
+}

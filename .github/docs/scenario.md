@@ -86,7 +86,7 @@ pelicode scan ./project-c
 Scenarios 1 to 3 need a reference database of published code, and building one is not something every developer or CI job should do: crawling thousands of packages at one request per second takes hours, and the database grows to gigabytes. The intended division of work:
 
 1. **One place builds the database**, for example a research group: a server runs `pelicode crawl --top N` and `pelicode stats --refresh` periodically to keep it current.
-2. **The database is distributed** as a snapshot without source code, for example on GitHub Releases.
+2. **The database is distributed** as a snapshot without source code (`pelicode snapshot`), published as an OCI artifact in quay.io.
 3. **Users and CI download the snapshot** and only run `pelicode scan`.
 
 | Needed for this | Status |
@@ -95,7 +95,8 @@ Scenarios 1 to 3 need a reference database of published code, and building one i
 | Skipping versions already indexed, and storing each file once | Done |
 | Updating the hash statistics incrementally, instead of recounting everything | Done |
 | Detecting newly published versions (crates.io RSS, PyPI updates, ...) | Not yet |
-| Creating and distributing snapshots (`pelicode snapshot`) | Not yet |
+| Creating snapshots and publishing them in quay.io (`pelicode snapshot`, `just snapshot_push`) | Done |
+| Fetching a snapshot from `scan` or the GitHub Action | Not yet (`just snapshot_pull` by hand) |
 | Removing data no longer referenced, and compacting the database | Done (`pelicode clean`) |
 
 ## Summary

@@ -18,6 +18,8 @@ Commands:
   crawl      Fetches packages from a public repository (pypi, maven, go, rubygems, crates) and indexes them
   index      Extracts the functions of every supported source file under the given directories and stores their features in the database
   stats      Shows database statistics and the hashes shared by the most packages
+  clean      Removes files and functions no package version refers to any more, and shrinks the database file
+  snapshot   Writes a copy of the database for checking only, to be distributed
   scan       Reports stored functions similar to the functions of the given code
   extract    Extracts the functions of the given files or directories and prints their features
   export     Prints the functions stored in the database
@@ -170,6 +172,38 @@ database: 221.3 MB -> 213.5 MB
 ```
 
 The hash statistics stay valid: they count only files that versions refer to.
+
+### `snapshot`
+
+Writes a copy of the database for checking only, to be distributed: building a reference database takes hours, so it is built in one place and others only `scan` against a snapshot of it.
+
+```
+pelicode snapshot -o <FILE> [OPTIONS]
+```
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `-o, --out <FILE>` | | The snapshot file to write |
+| `--ecosystem <ECOSYSTEM>` | all | Only these ecosystems (repeatable or comma-separated) |
+| `--latest` | | Only the latest version of each package, by publication time |
+| `--force` | | Replace the snapshot file if it exists |
+| `-f, --format <FORMAT>` | `text` | `text` or `json` |
+
+```
+pypi.db: 26 packages, 26 versions, 77084 functions, 165.5 MB
+```
+
+A snapshot keeps everything `scan` needs, with the hash statistics recounted for what it holds, and drops the MinHash signatures, which only indexing and `export` use (`export` shows none for a snapshot). It is a single file; nothing can be indexed into it. The database it is made from is not changed.
+
+Snapshots are published in quay.io as [OCI artifacts](https://oras.land/), compressed with zstd (to about a third), tagged `<NAME>-YYYYMMDD` and `<NAME>-latest`. With [ORAS](https://oras.land/docs/installation) and zstd installed:
+
+```sh
+pelicode snapshot -o pypi.db --ecosystem pypi --latest
+oras login quay.io
+just snapshot_push pypi.db pypi                 # quay.io/tama5/pelicode-db:pypi-YYYYMMDD and :pypi-latest
+just snapshot_pull pypi-latest pypi.db          # elsewhere: fetch and decompress
+pelicode scan ./src --db pypi.db
+```
 
 ### `scan`
 

@@ -76,3 +76,19 @@ docker_buildx:
         -t quay.io/tama5/pelicode:latest \
         -t quay.io/tama5/pelicode:{{app_version}} \
         .
+
+snapshot_repository := "quay.io/tama5/pelicode-db"
+snapshot_media_type := "application/vnd.pelicode.snapshot.v1.sqlite+zstd"
+
+# Compress a snapshot and push it into quay.io as NAME-YYYYMMDD and NAME-latest (needs zstd, oras)
+snapshot_push file name:
+    zstd -19 -T0 --force "{{file}}" -o "{{file}}.zst"
+    cd "$(dirname "{{file}}")" && oras push \
+        --artifact-type application/vnd.pelicode.snapshot.v1 \
+        "{{snapshot_repository}}:{{name}}-$(date -u +%Y%m%d),{{name}}-latest" \
+        "$(basename "{{file}}").zst:{{snapshot_media_type}}"
+
+# Pull a snapshot from quay.io (TAG such as pypi-latest) and decompress it into FILE
+snapshot_pull tag file:
+    tmp="$(mktemp -d)" && oras pull "{{snapshot_repository}}:{{tag}}" -o "$tmp" \
+        && zstd -d --force "$tmp"/*.zst -o "{{file}}" && rm -r "$tmp"
