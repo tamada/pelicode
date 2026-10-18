@@ -1,0 +1,461 @@
+//! The `pelicode` command: crawl, index, stats, scan, extract, export and
+//! languages, on top of the pelicode-core, -db, -detect and -crawl crates.
+
+// The doc comments of the clap arguments are the text of `--help`, where
+// `NAME[@VERSION]` is notation, not a link.
+#![allow(rustdoc::broken_intra_doc_links)]
+
+mod crawl;
+mod git;
+mod output;
+mod sarif;
+mod scan;
+mod settings;
+mod stats;
+
+use std::fs::File;
+use std::io::{self, BufWriter, Write};
+use std::path::{Path, PathBuf};
+
+use anyhow::{Context, Result, bail};
+use clap::{Args, Parser, Subcommand, ValueEnum};
+use pelicode_core::{
+    Config, FileFeatures, IdentMode, Language, Level, discover, extract_all, slash_path,
+};
+use pelicode_db::{Database, PackageInfo};
+
+/// Detects code similar to known open-source code at the function level.
+#[derive(Parser)]
+#[command(name = "pelicode", version, about)]
+struct Cli {
+    #[command(subcommand)]
+    command: Command,
+    /// Settings file [default: .pelicode.yaml, .pelicode.yml, .pelicode.json5 or .pelicode.json
+    /// in the current directory or above, up to the root of the git repository].
+    #[arg(long, global = true, value_name = "FILE", display_order = 900)]
+    config: Option<PathBuf>,
+    /// Ignore settings files.
+    #[arg(long, global = true, conflicts_with = "config", display_order = 901)]
+    no_config: bool,
+}
+
+#[derive(Subcommand)]
+enum Command {
+    /// Extracts the functions of every supported source file under the given
+    /// directories and stores their features in the database.
+    Index(IndexArgs),
+    /// Extracts the functions of the given files or directories and prints their features.
+    Extract(ExtractArgs),
+    /// Prints the functions stored in the database.
+    Export(ExportArgs),
+    /// Reports stored functions similar to the functions of the given code.
+    Scan(scan::ScanArgs),
+    /// Fetches packages from a public repository (pypi, maven, go, rubygems, crates) and indexes them.
+    Crawl(crawl::CrawlArgs),
+    /// Shows database statistics and the hashes shared by the most packages.
+    Stats(stats::StatsArgs),
+    /// Removes files and functions no package version refers to any more, and shrinks the
+    /// database file.
+    Clean(CleanArgs),
+    /// Lists the supported languages and their file extensions.
+    Languages,
+}
+
+#[derive(Args)]
+struct FeatureArgs {
+    /// Functions with fewer tokens get exact hashes only (no fingerprints).
+    #[arg(long, default_value_t = Config::default().min_tokens)]
+    min_tokens: usize,
+    /// How identifiers are abstracted.
+    #[arg(long, default_value = "uniform")]
+    ident_mode: IdentMode,
+    /// Normalization levels for which fingerprints are computed.
+    #[arg(long, value_delimiter = ',', default_value = "N1")]
+    levels: Vec<Level>,
+    /// k of the k-grams.
+    #[arg(long, default_value_t = Config::default().kgram)]
+    kgram: usize,
+    /// Window size of winnowing.
+    #[arg(long, default_value_t = Config::default().window)]
+    window: usize,
+    /// Length of MinHash signatures.
+    #[arg(long, default_value_t = Config::default().minhash_size)]
+    minhash_size: usize,
+    /// Number of LSH bands.
+    #[arg(long, default_value_t = Config::default().bands)]
+    bands: usize,
+}
+
+impl FeatureArgs {
+    /// The feature parameters as a validated [`Config`].
+    fn config(&self, keep_tokens: bool) -> Result<Config> {
+        let config = Config {
+            min_tokens: self.min_tokens,
+            ident_mode: self.ident_mode,
+            kgram: self.kgram,
+            window: self.window,
+            minhash_size: self.minhash_size,
+            bands: self.bands,
+            fingerprint_levels: self.levels.clone(),
+            keep_tokens,
+        };
+        config.validate()?;
+        Ok(config)
+    }
+}
+
+#[derive(Args)]
+struct IndexArgs {
+    /// Project directories (or files) to index.
+    #[arg(required = true)]
+    paths: Vec<PathBuf>,
+    /// Database file [default: `database` of the settings file, else pelicode.db].
+    #[arg(long)]
+    db: Option<PathBuf>,
+    /// Ecosystem the project belongs to.
+    #[arg(long, default_value = "local")]
+    ecosystem: String,
+    /// Package name (default: the name of the first directory).
+    #[arg(long)]
+    name: Option<String>,
+    /// Package version.
+    #[arg(long, default_value = "unversioned")]
+    version: String,
+    /// License of the project (SPDX identifier).
+    #[arg(long)]
+    license: Option<String>,
+    /// Repository URL of the project.
+    #[arg(long)]
+    repository: Option<String>,
+    /// Format of the summary.
+    #[arg(short, long, value_enum, default_value_t = SummaryFormat::Text)]
+    format: SummaryFormat,
+    /// Rebuild the per-hash package counts afterwards (see `pelicode stats`).
+    #[arg(long)]
+    refresh_stats: bool,
+    #[command(flatten)]
+    features: FeatureArgs,
+}
+
+#[derive(Args)]
+struct ExtractArgs {
+    /// Files or directories to extract.
+    #[arg(required = true)]
+    paths: Vec<PathBuf>,
+    /// Output format.
+    #[arg(short, long, value_enum, default_value_t = Format::Text)]
+    format: Format,
+    /// Output file (default: standard output).
+    #[arg(short, long)]
+    output: Option<PathBuf>,
+    /// Include the normalized tokens (of LEVEL in text and CSV; of every level in JSON).
+    #[arg(long, value_name = "LEVEL", num_args = 0..=1, default_missing_value = "N1")]
+    tokens: Option<Level>,
+    #[command(flatten)]
+    features: FeatureArgs,
+}
+
+#[derive(Args)]
+struct ExportArgs {
+    /// Database file [default: `database` of the settings file, else pelicode.db].
+    #[arg(long)]
+    db: Option<PathBuf>,
+    /// Output format.
+    #[arg(short, long, value_enum, default_value_t = Format::Text)]
+    format: Format,
+    /// Output file (default: standard output).
+    #[arg(short, long)]
+    output: Option<PathBuf>,
+}
+
+#[derive(Args)]
+struct CleanArgs {
+    /// Database file [default: `database` of the settings file, else pelicode.db].
+    #[arg(long)]
+    db: Option<PathBuf>,
+    /// Only report what would be removed.
+    #[arg(long)]
+    dry_run: bool,
+    /// Do not shrink the database file afterwards (VACUUM needs as much free disk space as the
+    /// database takes).
+    #[arg(long)]
+    no_vacuum: bool,
+    /// Format of the summary.
+    #[arg(short, long, value_enum, default_value_t = SummaryFormat::Text)]
+    format: SummaryFormat,
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+enum Format {
+    Text,
+    Json,
+    Csv,
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+enum SummaryFormat {
+    Text,
+    Json,
+}
+
+/// Runs the command; output cut short by a closed pipe (`| head`) is not an error.
+fn main() -> Result<()> {
+    match run(Cli::parse()) {
+        // Output piped into `head` and the like.
+        Err(e) if is_broken_pipe(&e) => Ok(()),
+        other => other,
+    }
+}
+
+/// Whether `e` comes from writing to a closed pipe.
+fn is_broken_pipe(e: &anyhow::Error) -> bool {
+    e.chain().any(|cause| {
+        cause
+            .downcast_ref::<io::Error>()
+            .is_some_and(|io| io.kind() == io::ErrorKind::BrokenPipe)
+            || cause
+                .downcast_ref::<csv::Error>()
+                .is_some_and(|c| matches!(c.kind(), csv::ErrorKind::Io(io) if io.kind() == io::ErrorKind::BrokenPipe))
+            || cause
+                .downcast_ref::<serde_json::Error>()
+                .is_some_and(|j| j.io_error_kind() == Some(io::ErrorKind::BrokenPipe))
+    })
+}
+
+/// Dispatches to the subcommand; `crawl` and `scan` exit with status 1 on failure or match.
+fn run(cli: Cli) -> Result<()> {
+    let loaded = settings::load(cli.config.as_deref(), cli.no_config)?;
+    let settings = loaded.as_ref();
+    match cli.command {
+        Command::Index(args) => index(args, settings),
+        Command::Extract(args) => extract(args),
+        Command::Export(args) => export(args, settings),
+        Command::Stats(args) => stats::run(args, settings),
+        Command::Clean(args) => clean(args, settings),
+        Command::Crawl(args) => {
+            if !crawl::run(args, settings)? {
+                std::process::exit(1);
+            }
+            Ok(())
+        }
+        Command::Scan(args) => {
+            if scan::run(args, settings)? {
+                std::process::exit(1);
+            }
+            Ok(())
+        }
+        Command::Languages => {
+            for lang in Language::ALL {
+                println!("{:<8} {}", lang.name(), lang.extensions().join(", "));
+            }
+            Ok(())
+        }
+    }
+}
+
+/// The database to use: `--db`, else the `database` of the settings, else `pelicode.db`.
+fn database(db: &Option<PathBuf>, settings: Option<&settings::Loaded>) -> PathBuf {
+    db.clone()
+        .or_else(|| settings.and_then(settings::Loaded::database))
+        .unwrap_or_else(|| PathBuf::from("pelicode.db"))
+}
+
+/// Extracts every path; files that fail are reported on stderr and skipped.
+/// Paths of files under a directory are relative to it; with several
+/// directories they are prefixed with the directory name so that, e.g.,
+/// `json/__init__.py` and `http/__init__.py` stay distinct.
+fn extract_paths(paths: &[PathBuf], config: &Config) -> Result<Vec<FileFeatures>> {
+    let mut results = Vec::new();
+    for path in paths {
+        let files = discover(path).with_context(|| format!("cannot scan {}", path.display()))?;
+        let prefix = (paths.len() > 1 && path.is_dir())
+            .then(|| path.canonicalize().ok()?.file_name().map(PathBuf::from))
+            .flatten();
+        for result in extract_all(&files, config) {
+            match result {
+                Ok(mut file) => {
+                    if let Some(prefix) = &prefix {
+                        file.path = slash_path(&prefix.join(&file.path));
+                    }
+                    results.push(file);
+                }
+                Err(e) => eprintln!("warning: {e}"),
+            }
+        }
+    }
+    Ok(results)
+}
+
+/// Size of an SQLite database with its write-ahead log, in bytes.
+fn database_size(path: &Path) -> u64 {
+    let size = |p: &Path| std::fs::metadata(p).map(|m| m.len()).unwrap_or(0);
+    let mut wal = path.as_os_str().to_owned();
+    wal.push("-wal");
+    size(path) + size(Path::new(&wal))
+}
+
+/// `pelicode clean`: removes unreferenced files and functions, then vacuums.
+fn clean(args: CleanArgs, settings: Option<&settings::Loaded>) -> Result<()> {
+    let db_path = database(&args.db, settings);
+    if !db_path.exists() {
+        bail!("{}: no such database", db_path.display());
+    }
+    let mut db = Database::open_unchecked(&db_path)?;
+    let before = database_size(&db_path);
+    let removed = if args.dry_run {
+        db.unreferenced()?
+    } else {
+        let removed = db.clean()?;
+        if !args.no_vacuum {
+            db.vacuum()?;
+        }
+        removed
+    };
+    let after = database_size(&db_path);
+    match args.format {
+        SummaryFormat::Text => {
+            let verb = if args.dry_run {
+                "would remove"
+            } else {
+                "removed"
+            };
+            println!(
+                "{verb} {} files and {} functions no longer referenced",
+                removed.files, removed.functions
+            );
+            if !args.dry_run {
+                let mb = |b: u64| b as f64 / 1024.0 / 1024.0;
+                println!("database: {:.1} MB -> {:.1} MB", mb(before), mb(after));
+            }
+        }
+        SummaryFormat::Json => {
+            let value = serde_json::json!({
+                "dry_run": args.dry_run,
+                "removed": removed,
+                "size_before": before,
+                "size_after": after,
+            });
+            println!("{}", serde_json::to_string_pretty(&value)?);
+        }
+    }
+    Ok(())
+}
+
+/// `pelicode index`: extracts the given paths and stores them as one package version.
+fn index(args: IndexArgs, settings: Option<&settings::Loaded>) -> Result<()> {
+    let config = args.features.config(false)?;
+    let db_path = database(&args.db, settings);
+    let name = match &args.name {
+        Some(name) => name.clone(),
+        None => default_name(&args.paths[0])?,
+    };
+    let files = extract_paths(&args.paths, &config)?;
+    let mut db = Database::open(&db_path, &config)
+        .with_context(|| format!("cannot open {}", db_path.display()))?;
+    let package = PackageInfo {
+        ecosystem: args.ecosystem,
+        name,
+        version: args.version,
+        license_spdx: args.license,
+        repository_url: args.repository,
+        ..PackageInfo::default()
+    };
+    let summary = db.index(&package, &files)?;
+    if args.refresh_stats {
+        db.refresh_hash_stats()?;
+    }
+    let stats = db.stats()?;
+    match args.format {
+        SummaryFormat::Text => {
+            println!(
+                "indexed {}:{}@{} into {}",
+                package.ecosystem,
+                package.name,
+                package.version,
+                db_path.display()
+            );
+            println!(
+                "  files: {} ({} new), functions: {} new ({} with fingerprints)",
+                summary.files, summary.new_files, summary.functions, summary.indexed_functions
+            );
+            println!(
+                "  database: {} packages, {} versions, {} files, {} functions",
+                stats.packages, stats.versions, stats.source_files, stats.functions
+            );
+        }
+        SummaryFormat::Json => {
+            let value = serde_json::json!({
+                "package": {
+                    "ecosystem": package.ecosystem,
+                    "name": package.name,
+                    "version": package.version,
+                },
+                "summary": summary,
+                "database": stats,
+            });
+            println!("{}", serde_json::to_string_pretty(&value)?);
+        }
+    }
+    Ok(())
+}
+
+/// Package name from the name of `path` (or of its directory when it is a file).
+fn default_name(path: &Path) -> Result<String> {
+    let path = path
+        .canonicalize()
+        .with_context(|| format!("cannot access {}", path.display()))?;
+    let dir = if path.is_file() {
+        path.parent().unwrap_or(&path)
+    } else {
+        &path
+    };
+    match dir.file_name() {
+        Some(name) => Ok(name.to_string_lossy().into_owned()),
+        None => bail!(
+            "cannot infer a package name from {}; use --name",
+            path.display()
+        ),
+    }
+}
+
+/// `pelicode extract`: prints the features of the given paths, without a database.
+fn extract(args: ExtractArgs) -> Result<()> {
+    let config = args.features.config(args.tokens.is_some())?;
+    let files = extract_paths(&args.paths, &config)?;
+    let mut out = open_output(args.output.as_deref())?;
+    match args.format {
+        Format::Text => output::extract_text(&mut out, &files, args.tokens)?,
+        Format::Json => output::json(&mut out, &files)?,
+        Format::Csv => output::extract_csv(&mut out, &files, args.tokens)?,
+    }
+    out.flush()?;
+    Ok(())
+}
+
+/// `pelicode export`: prints the functions stored in the database.
+fn export(args: ExportArgs, settings: Option<&settings::Loaded>) -> Result<()> {
+    let db_path = database(&args.db, settings);
+    if !db_path.exists() {
+        bail!("{}: no such database", db_path.display());
+    }
+    let db = Database::open_unchecked(&db_path)?;
+    let rows = db.functions()?;
+    let mut out = open_output(args.output.as_deref())?;
+    match args.format {
+        Format::Text => output::export_text(&mut out, &rows)?,
+        Format::Json => output::json(&mut out, &rows)?,
+        Format::Csv => output::export_csv(&mut out, &rows)?,
+    }
+    out.flush()?;
+    Ok(())
+}
+
+/// A buffered writer to `path`, or to the standard output.
+fn open_output(path: Option<&Path>) -> Result<Box<dyn Write>> {
+    Ok(match path {
+        Some(path) => Box::new(BufWriter::new(
+            File::create(path).with_context(|| format!("cannot create {}", path.display()))?,
+        )),
+        None => Box::new(BufWriter::new(io::stdout().lock())),
+    })
+}

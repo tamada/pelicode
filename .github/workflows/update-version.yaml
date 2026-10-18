@@ -1,0 +1,55 @@
+name: update_version
+
+on:
+  push:
+    branches:
+      - release/v*
+
+jobs:
+  version-up:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Get tag
+        id: vars
+        run: |
+          echo "GITHUB_REF: $GITHUB_REF"
+          echo "tag=${GITHUB_REF##*/v}" >> $GITHUB_OUTPUT
+          echo "branch=${GITHUB_REF#refs/heads/}" >> $GITHUB_OUTPUT
+
+      - name: Update version
+        env:
+          TAG: ${{ steps.vars.outputs.tag }}
+        run: |
+          # Two kinds of lines of the workspace manifest carry the version and have to move
+          # together: [workspace.package] sets it for every crate, and [workspace.dependencies]
+          # pins the versions the crates ask of each other. Leave the second behind and the
+          # crates would ask for the previous release of each other, and fail to publish.
+          sed -E \
+            -e "s/^version = \".*\"/version = \"${TAG}\"/" \
+            -e "s/^(pelicode-[a-z]+ = \{ path = \"[a-z]+\", version = )\"[^\"]*\"/\1\"${TAG}\"/" \
+            Cargo.toml > a ; mv a Cargo.toml
+          # The version badge of the documentation site.
+          sed -E "s/Version-[0-9][^-]*-blue/Version-${TAG}-blue/" docs/content/_index.md > a ; mv a docs/content/_index.md
+          sed "s/ARG VERSION=.*/ARG VERSION=${TAG}/g" Containerfile > a ; mv a Containerfile
+          # The workspace members' versions are recorded in the lock file too, and --locked
+          # refuses a lock file that disagrees with the manifests.
+          cargo update --workspace
+
+      - name: Initialize Git
+        shell: bash
+        run: |
+          git config --global user.name  "GitHub Actions"
+          git config --global user.email "action@github.com"
+          auth_header="$(git config --local --get http.https://github.com/.extraheader)"
+
+      - name: Commit the changes
+        run:  |
+          git commit -a -m "update version to ${{ steps.vars.outputs.tag }}, ready to publish v${{ steps.vars.outputs.tag }}" || true
+
+      - name: Push branch
+        uses: ad-m/github-push-action@881a6320fdb16eb5318c5054f31c218aec2b324c # v1.3.0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          branch: ${{ steps.vars.outputs.branch }}

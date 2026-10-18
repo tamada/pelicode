@@ -1,0 +1,19 @@
+[workspace]
+resolver = "3"
+members = ["core", "db", "detect", "crawl", "cli"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.90"
+license = "MIT"
+repository = "https://github.com/tamada/pelicode"
+homepage = "https://tamada.github.io/pelicode"
+authors = ["Haruaki Tamada"]
+
+[workspace.dependencies]
+# The versions move with [workspace.package] (see .github/workflows/update-version.yaml).
+pelicode-core = { path = "core", version = "0.1.0" }
+pelicode-db = { path = "db", version = "0.1.0" }
+pelicode-detect = { path = "detect", version = "0.1.0" }
+pelicode-crawl = { path = "crawl", version = "0.1.0" }
