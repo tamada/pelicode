@@ -1,6 +1,6 @@
 # pelicode
 
-English | [日本語](README.ja.md)
+English | [日本語](.github/docs/README.ja.md)
 
 pelicode extracts structural features of code at the function level (hashes based on the AST) and compares them with the code of published packages to find **similar code that should be reviewed**.
 
@@ -109,6 +109,7 @@ The first line is the location and name of the checked function. Each following 
 | `pelicode index <PATHS>...` | Index local directories as one package |
 | `pelicode stats` | Show database statistics and the hashes found in the most packages |
 | `pelicode clean` | Remove data no longer referenced, and shrink the database |
+| `pelicode snapshot -o <FILE>` | Write a copy of the database for checking only, to distribute |
 | `pelicode scan [PATHS]...` | Search for similar code candidates |
 | `pelicode extract <PATHS>...` | Show extracted functions and their features (no database) |
 | `pelicode export` | List the functions stored in the database |
@@ -204,7 +205,7 @@ pelicode looks for it in the current directory and above, up to the root of the 
 
 ### GitHub Action
 
-The repository is also a GitHub Action that checks pull requests and shows the candidates through code scanning:
+[pelicode-action](https://github.com/tamada/pelicode-action) is a GitHub Action that checks pull requests and shows the candidates through code scanning:
 
 ```yaml
 # .github/workflows/pelicode.yaml
@@ -222,12 +223,12 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0       # pelicode compares the pull request with its base
-      - uses: tamada/pelicode@v0.1.0
+      - uses: tamada/pelicode-action@v0.1.0
         with:
           database-url: https://example.org/pelicode/pelicode.db
 ```
 
-See [Usage](https://tamada.github.io/pelicode/usage/#-github-action) for its inputs.
+See [pelicode-action](https://github.com/tamada/pelicode-action) for its inputs.
 
 ### extract / export: looking inside
 
@@ -274,7 +275,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow, adding a la
 ## Not implemented yet
 
 - Automatic detection of newly published versions (packages are currently given by name, by a list file or as the top N)
-- Distributable database snapshots (`pelicode snapshot`) and a command for evaluation experiments (`pelicode eval`)
+- Fetching published snapshots from `scan` and the GitHub Action, and a command for evaluation experiments (`pelicode eval`)
 - Fetching the most downloaded packages of Go, Maven Central and RubyGems
 
 ## License

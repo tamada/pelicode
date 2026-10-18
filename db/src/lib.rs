@@ -29,14 +29,19 @@ pub enum Error {
     /// A parameter recorded in the database cannot be read.
     #[error("invalid value in database meta: {0}")]
     InvalidMeta(String),
+    /// The database is a snapshot, which is for checking only.
+    #[error("database is a snapshot for checking only; index into the database it was made from")]
+    Snapshot,
 }
 
 mod clean;
 mod query;
+mod snapshot;
 mod stats;
 
 pub use clean::CleanSummary;
 pub use query::{FunctionInfo, Occurrence, StoredFingerprint};
+pub use snapshot::{SnapshotOptions, SnapshotSummary};
 pub use stats::{CommonHash, HashStatsInfo};
 
 /// Result of the database operations.
@@ -465,12 +470,21 @@ impl Database {
         parse(&stored, "minhash_size", &mut config.minhash_size)?;
         parse(&stored, "bands", &mut config.bands)?;
 
-        let mut stmt = self
-            .conn
-            .prepare("SELECT DISTINCT level FROM minhash ORDER BY level")?;
-        let levels: Vec<u8> = stmt
-            .query_map([], |r| r.get(0))?
-            .collect::<rusqlite::Result<_>>()?;
+        let levels: Vec<u8> = match stored.get(snapshot::LEVELS_KEY) {
+            Some(levels) => levels
+                .split(',')
+                .filter(|l| !l.is_empty())
+                .map(|l| l.parse())
+                .collect::<std::result::Result<_, _>>()
+                .map_err(|_| Error::InvalidMeta(format!("{} = {levels}", snapshot::LEVELS_KEY)))?,
+            None => {
+                let mut stmt = self
+                    .conn
+                    .prepare("SELECT DISTINCT level FROM minhash ORDER BY level")?;
+                stmt.query_map([], |r| r.get(0))?
+                    .collect::<rusqlite::Result<_>>()?
+            }
+        };
         if !levels.is_empty() {
             config.fingerprint_levels = levels.into_iter().filter_map(Level::from_u8).collect();
         }
@@ -514,7 +528,8 @@ impl Database {
     ///
     /// # Errors
     ///
-    /// [`Error::Sqlite`] when the files cannot be stored; nothing is stored then.
+    /// [`Error::Snapshot`] when this database is a snapshot, and [`Error::Sqlite`]
+    /// when the files cannot be stored; nothing is stored then.
     ///
     /// # Examples
     ///
@@ -541,6 +556,7 @@ impl Database {
     /// assert_eq!(second.new_files, 0);
     /// ```
     pub fn index(&mut self, pkg: &PackageInfo, files: &[FileFeatures]) -> Result<IndexSummary> {
+        self.refuse_snapshot()?;
         let tx = self.conn.transaction()?;
         let version_id = upsert_version(&tx, pkg, "indexed", None)?;
         // The hashes of the files unlinked here and linked below may change
@@ -640,7 +656,8 @@ impl Database {
     ///
     /// # Errors
     ///
-    /// [`Error::Sqlite`] when the failure cannot be stored.
+    /// [`Error::Snapshot`] when this database is a snapshot, and [`Error::Sqlite`]
+    /// when the failure cannot be stored.
     ///
     /// # Examples
     ///
@@ -660,6 +677,7 @@ impl Database {
     /// assert_eq!(db.version_status("pypi", "broken", "0.1").unwrap().as_deref(), Some("failed"));
     /// ```
     pub fn record_failure(&mut self, pkg: &PackageInfo, error: &str) -> Result<()> {
+        self.refuse_snapshot()?;
         let tx = self.conn.transaction()?;
         upsert_version(&tx, pkg, "failed", Some(error))?;
         tx.commit()?;

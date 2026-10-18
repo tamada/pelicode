@@ -244,6 +244,19 @@ For each hash, the number of packages containing it (several versions of a packa
 
 Indexing a version again replaces its file list, which may leave files that no version links to. `pelicode clean` removes them with their functions, exact hashes, fingerprints, MinHash signatures and LSH buckets, in one transaction, then gives the space back with SQLite `VACUUM` (with a checkpoint of the write-ahead log before and after). The hash statistics need no recount, since they count linked files only.
 
+### 5.6 Snapshots
+
+Checking code needs a reference database, but building one takes hours, so it is built in one place and distributed (see the scenarios). `pelicode snapshot` writes a copy for checking only:
+
+- It keeps what `scan` reads: packages, versions, files, functions, exact hashes, fingerprints, LSH buckets, and the hash statistics, recounted for what the snapshot holds. The fingerprint levels go to `meta`.
+- It drops the MinHash signatures (used by indexing and `export` only), the pending hashes of the incremental statistics, and the versions whose crawl failed.
+- `--ecosystem` keeps some ecosystems only, and `--latest` the latest indexed version of each package (by publication time, then crawl time).
+- It is one file without a write-ahead log, marked as a snapshot in `meta`; indexing into it is refused.
+
+With 26 PyPI packages (77,084 functions), the database of 231 MB gives a snapshot of 174 MB, and 54 MB compressed with zstd (`-19`); `scan` reports the same candidates with either.
+
+Snapshots are published as OCI artifacts in quay.io (`quay.io/tama5/pelicode-db`), compressed with zstd, with tags `<NAME>-YYYYMMDD` and `<NAME>-latest`; `just snapshot_push` and `just snapshot_pull` push and pull them with [ORAS](https://oras.land/).
+
 ## 6. Collection (pelicode-crawl)
 
 ### 6.1 Common Steps
@@ -365,6 +378,7 @@ Code that matches a library the checked project depends on is expected, so depen
 | `pelicode index <PATHS>...` | Index local directories as one package version; the ecosystem is `local` by default |
 | `pelicode stats` | Show database statistics and the most common hashes; `--refresh` recounts them |
 | `pelicode clean` | Remove files and functions no version refers to any more, then shrink the file (`--dry-run` only counts them) |
+| `pelicode snapshot -o <FILE>` | Write a copy of the database for checking only (§5.6) |
 | `pelicode scan [PATHS]...` | Search for candidates (§7) |
 | `pelicode extract <PATHS>...` | Show functions and their features, without a database |
 | `pelicode export` | List the functions stored in a database |
@@ -399,15 +413,15 @@ crawl:
 
 ### 8.3 GitHub Action
 
-The repository is a composite GitHub Action (`action.yml`) for checking pull requests:
+A composite GitHub Action for checking pull requests lives in its own repository, [tamada/pelicode-action](https://github.com/tamada/pelicode-action), versioned apart from pelicode (`uses: tamada/pelicode-action@vX.Y.Z`):
 
-1. **Install**: the release of the action's tag (`uses: tamada/pelicode@vX.Y.Z`), downloaded from the releases of the repository for the runner's platform; at other refs, the action's own source built with Cargo; or a binary given by `pelicode-path`.
+1. **Install**: the latest release of pelicode, or the one given by `pelicode-version`, downloaded for the runner's platform; with `pelicode-version: source`, pelicode built with Cargo at `pelicode-ref`; or a binary given by `pelicode-path`.
 2. **Database**: downloaded from `database-url`, if given; otherwise `database`, the settings file, or `pelicode.db`.
 3. **Scan**: `pelicode scan -f sarif` over `base...head` of a pull request, `before..after` of a push, or the whole repository for other events and for pushes creating a branch; `range`, `paths`, `config` and `args` override this.
 4. **Report**: the number of functions with candidates as the output `candidates`, the candidates in the summary of the job, and the SARIF log uploaded to code scanning (`github/codeql-action/upload-sarif`, category `pelicode`) unless `upload-sarif` is `false`.
 5. **Fail**: only with `fail-on-match`, after the upload, so that the notes appear. A `fail_on_match` in the settings file does not stop the action before the upload.
 
-The logic is in `action/install.sh` and `action/scan.sh`, and a workflow (`test_action`) runs the action on a repository with a copied function and checks its outputs.
+The logic is in `action/install.sh` and `action/scan.sh` of that repository, whose `test` workflow builds pelicode, runs the action on a repository with a copied function and checks its outputs.
 
 ### 8.4 Output Formats
 
@@ -514,9 +528,10 @@ A command that runs evaluation experiments (`pelicode eval`) is not implemented 
 | Checking directories and git ranges; text, JSON and CSV | Done |
 | Settings files in YAML and JSON5 | Done |
 | SARIF output | Done |
-| GitHub Action for pull requests | Done |
+| GitHub Action for pull requests (tamada/pelicode-action) | Done |
 | Leaving out the dependencies of the checked code | Done |
 | Database cleanup (`pelicode clean`) | Done |
+| Snapshots (`pelicode snapshot`, OCI artifacts in quay.io) | Done (none published yet) |
 | CI, release, container, documentation site | Done (no release made yet) |
 
 ### 12.2 Not Implemented Yet
@@ -524,7 +539,7 @@ A command that runs evaluation experiments (`pelicode eval`) is not implemented 
 | Feature | Description |
 | --- | --- |
 | Detection of new versions | `list_updates(since)` with the RSS feeds of crates.io, PyPI updates, index.golang.org, ... |
-| Snapshots | Creating (`pelicode snapshot`) and distributing databases without source code |
+| Fetching snapshots | Letting `scan`, the settings file and the GitHub Action fetch a published snapshot, with caching |
 | Evaluation | `pelicode eval` and the generation of evaluation data (§11.1) |
 | No dependency on the git command | Reading diffs with gix, the Rust implementation of git |
 

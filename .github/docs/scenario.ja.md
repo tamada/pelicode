@@ -18,7 +18,7 @@ pelicode scan --git origin/main...HEAD --db pelicode.db --fail-on-match
 - **何が見つかるか**: PR の関数のうち、公開パッケージの関数と同一または類似のもの。パッケージ、バージョン、ファイル、行、ライセンスが添えられます。
 - **その後**: レビュアーが両者を見比べ、帰属表示を求める、書き直しを求める、問題なしとする、のいずれかを判断します。
 - **今できること**: 上のコマンドです。`--fail-on-match` を付けると、確認すべき候補があるときにジョブが失敗します。DB の場所、閾値、除外する対象は、リポジトリにコミットした `.pelicode.yaml` に書いておけます。
-- **GitHub Action**: `uses: tamada/pelicode@vX.Y.Z` で、PR ごとに変更を検査し、候補を Code Scanning で関数への注釈として表示し、ジョブのサマリーにも一覧を出します（[Usage](https://tamada.github.io/pelicode/usage/#-github-action) を参照）。
+- **GitHub Action**: `uses: tamada/pelicode-action@vX.Y.Z` で、PR ごとに変更を検査し、候補を Code Scanning で関数への注釈として表示し、ジョブのサマリーにも一覧を出します（[Usage](https://tamada.github.io/pelicode/usage/#-github-action) を参照）。
 - **足りないもの**: CI が DB を入手する手段（[DB をどこで作るか](#db-をどこで作るか)を参照）。
 
 ## 2. コミット前に手元で確かめる
@@ -86,7 +86,7 @@ pelicode scan ./project-c
 シナリオ1〜3には、公開コードの参照用 DB が必要です。しかし、開発者や CI がそれぞれ DB を作るのは現実的ではありません。数千パッケージを1秒に1リクエストで取得すると数時間かかり、DB も数 GB 規模になるためです。次の分担を想定しています。
 
 1. **DB は1か所で作る**（例: 研究グループ）。サーバーで `pelicode crawl --top N` と `pelicode stats --refresh` を定期的に実行し、最新に保ちます。
-2. **DB を配布する**。ソースコードを含まないスナップショットを、GitHub Releases などで公開します。
+2. **DB を配布する**。ソースコードを含まないスナップショット（`pelicode snapshot`）を、quay.io に OCI アーティファクトとして公開します。
 3. **利用者と CI はスナップショットをダウンロード**し、`pelicode scan` を実行するだけにします。
 
 | 必要なもの | 状況 |
@@ -95,7 +95,8 @@ pelicode scan ./project-c
 | 取得済みのバージョンを飛ばすこと、同じファイルを1回だけ保存すること | 実装済み |
 | ハッシュごとの出現パッケージ数を、全体を数え直さずに更新すること | 実装済み |
 | 新しく公開されたバージョンの検知（crates.io の RSS、PyPI の更新情報など） | 未実装 |
-| スナップショットの作成と配布（`pelicode snapshot`） | 未実装 |
+| スナップショットの作成と quay.io への公開（`pelicode snapshot`、`just snapshot_push`） | 実装済み |
+| `scan` や GitHub Action からのスナップショットの取得 | 未実装（`just snapshot_pull` で手動） |
 | 参照されなくなったデータの削除と、DB の容量の圧縮 | 実装済み（`pelicode clean`） |
 
 ## まとめ

@@ -18,6 +18,8 @@ Commands:
   crawl      Fetches packages from a public repository (pypi, maven, go, rubygems, crates) and indexes them
   index      Extracts the functions of every supported source file under the given directories and stores their features in the database
   stats      Shows database statistics and the hashes shared by the most packages
+  clean      Removes files and functions no package version refers to any more, and shrinks the database file
+  snapshot   Writes a copy of the database for checking only, to be distributed
   scan       Reports stored functions similar to the functions of the given code
   extract    Extracts the functions of the given files or directories and prints their features
   export     Prints the functions stored in the database
@@ -170,6 +172,38 @@ database: 221.3 MB -> 213.5 MB
 ```
 
 The hash statistics stay valid: they count only files that versions refer to.
+
+### `snapshot`
+
+Writes a copy of the database for checking only, to be distributed: building a reference database takes hours, so it is built in one place and others only `scan` against a snapshot of it.
+
+```
+pelicode snapshot -o <FILE> [OPTIONS]
+```
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `-o, --out <FILE>` | | The snapshot file to write |
+| `--ecosystem <ECOSYSTEM>` | all | Only these ecosystems (repeatable or comma-separated) |
+| `--latest` | | Only the latest version of each package, by publication time |
+| `--force` | | Replace the snapshot file if it exists |
+| `-f, --format <FORMAT>` | `text` | `text` or `json` |
+
+```
+pypi.db: 26 packages, 26 versions, 77084 functions, 165.5 MB
+```
+
+A snapshot keeps everything `scan` needs, with the hash statistics recounted for what it holds, and drops the MinHash signatures, which only indexing and `export` use (`export` shows none for a snapshot). It is a single file; nothing can be indexed into it. The database it is made from is not changed.
+
+Snapshots are published in quay.io as [OCI artifacts](https://oras.land/), compressed with zstd (to about a third), tagged `<NAME>-YYYYMMDD` and `<NAME>-latest`. With [ORAS](https://oras.land/docs/installation) and zstd installed:
+
+```sh
+pelicode snapshot -o pypi.db --ecosystem pypi --latest
+oras login quay.io
+just snapshot_push pypi.db pypi                 # quay.io/tama5/pelicode-db:pypi-YYYYMMDD and :pypi-latest
+just snapshot_pull pypi-latest pypi.db          # elsewhere: fetch and decompress
+pelicode scan ./src --db pypi.db
+```
 
 ### `scan`
 
@@ -341,7 +375,7 @@ The paths matched by `exclude.paths` are the paths `scan` reports: relative to t
 
 ## 🤖 GitHub Action
 
-The repository is also a GitHub Action that checks the functions changed by a pull request or a push, shows the candidates in the pull request through GitHub code scanning, and lists them in the summary of the job.
+[pelicode-action](https://github.com/tamada/pelicode-action) is a GitHub Action that checks the functions changed by a pull request or a push, shows the candidates in the pull request through GitHub code scanning, and lists them in the summary of the job.
 
 ```yaml
 # .github/workflows/pelicode.yaml
@@ -359,14 +393,14 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0       # pelicode compares the pull request with its base
-      - uses: tamada/pelicode@v0.1.0
+      - uses: tamada/pelicode-action@v0.1.0
         with:
           database-url: https://example.org/pelicode/pelicode.db
 ```
 
 What it does:
 
-1. **Installs pelicode**: the release of the action's tag (`tamada/pelicode@v0.1.0` installs pelicode 0.1.0); used at a branch, it builds the action's own source with Cargo.
+1. **Installs pelicode**: the latest release for the runner's platform, the release given by `pelicode-version`, or, with `pelicode-version: source`, pelicode built with Cargo at `pelicode-ref`.
 2. **Downloads the database** from `database-url`, if given.
 3. **Scans** the changes of the pull request (`base...head`) or of the push (`before..after`); other events, and pushes creating a branch, check the whole repository. The settings file of the repository applies.
 4. **Uploads** the SARIF log to code scanning, where each candidate is a note on the function, and writes the candidates to the summary of the job.
@@ -384,7 +418,8 @@ What it does:
 | `fail-on-match` | `false` | Fail when candidates are found |
 | `upload-sarif` | `true` | Upload to code scanning |
 | `sarif-file` | `pelicode.sarif` | Where to write the SARIF log |
-| `pelicode-version` | the action's tag, else `source` | Release to install, or `source` |
+| `pelicode-version` | `latest` | Release to install (`0.1.0`, `latest`), or `source` |
+| `pelicode-ref` | `main` | Branch, tag or commit of tamada/pelicode to build with `source` |
 | `pelicode-path` | | An installed binary to use |
 
 The outputs are `candidates`, the number of functions with candidates, and `sarif-file`.

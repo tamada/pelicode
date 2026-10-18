@@ -57,6 +57,9 @@ enum Command {
     /// Removes files and functions no package version refers to any more, and shrinks the
     /// database file.
     Clean(CleanArgs),
+    /// Writes a copy of the database for checking only, to be distributed: without the data
+    /// only indexing needs, optionally limited to some ecosystems or to the latest versions.
+    Snapshot(SnapshotArgs),
     /// Lists the supported languages and their file extensions.
     Languages,
 }
@@ -185,6 +188,28 @@ struct CleanArgs {
     format: SummaryFormat,
 }
 
+#[derive(Args)]
+struct SnapshotArgs {
+    /// Database file [default: `database` of the settings file, else pelicode.db].
+    #[arg(long)]
+    db: Option<PathBuf>,
+    /// Snapshot file to write.
+    #[arg(short, long)]
+    out: PathBuf,
+    /// Only these ecosystems (repeatable or comma-separated) [default: all].
+    #[arg(long = "ecosystem", value_name = "ECOSYSTEM", value_delimiter = ',')]
+    ecosystems: Vec<String>,
+    /// Only the latest version of each package, by publication time.
+    #[arg(long)]
+    latest: bool,
+    /// Replace the snapshot file if it exists.
+    #[arg(long)]
+    force: bool,
+    /// Format of the summary.
+    #[arg(short, long, value_enum, default_value_t = SummaryFormat::Text)]
+    format: SummaryFormat,
+}
+
 #[derive(Clone, Copy, ValueEnum)]
 enum Format {
     Text,
@@ -232,6 +257,7 @@ fn run(cli: Cli) -> Result<()> {
         Command::Export(args) => export(args, settings),
         Command::Stats(args) => stats::run(args, settings),
         Command::Clean(args) => clean(args, settings),
+        Command::Snapshot(args) => snapshot(args, settings),
         Command::Crawl(args) => {
             if !crawl::run(args, settings)? {
                 std::process::exit(1);
@@ -292,6 +318,44 @@ fn database_size(path: &Path) -> u64 {
     let mut wal = path.as_os_str().to_owned();
     wal.push("-wal");
     size(path) + size(Path::new(&wal))
+}
+
+/// `pelicode snapshot`: writes a copy of the database for checking only.
+fn snapshot(args: SnapshotArgs, settings: Option<&settings::Loaded>) -> Result<()> {
+    let db_path = database(&args.db, settings);
+    if !db_path.exists() {
+        bail!("{}: no such database", db_path.display());
+    }
+    if args.out.exists() {
+        if !args.force {
+            bail!(
+                "{}: already exists (use --force to replace it)",
+                args.out.display()
+            );
+        }
+        std::fs::remove_file(&args.out)
+            .with_context(|| format!("cannot remove {}", args.out.display()))?;
+    }
+    let db = Database::open_unchecked(&db_path)?;
+    let options = pelicode_db::SnapshotOptions {
+        ecosystems: args.ecosystems,
+        latest_only: args.latest,
+    };
+    let summary = db
+        .snapshot(&args.out, &options)
+        .with_context(|| format!("cannot write {}", args.out.display()))?;
+    match args.format {
+        SummaryFormat::Text => println!(
+            "{}: {} packages, {} versions, {} functions, {:.1} MB",
+            args.out.display(),
+            summary.packages,
+            summary.versions,
+            summary.functions,
+            summary.bytes as f64 / 1024.0 / 1024.0
+        ),
+        SummaryFormat::Json => println!("{}", serde_json::to_string_pretty(&summary)?),
+    }
+    Ok(())
 }
 
 /// `pelicode clean`: removes unreferenced files and functions, then vacuums.
