@@ -39,7 +39,7 @@ pub struct StatsArgs {
 
 /// Runs `pelicode stats`, refreshing the hash statistics first with `--refresh`.
 pub fn run(args: StatsArgs, settings: Option<&Loaded>) -> Result<()> {
-    let db_path = crate::oci::resolve(&crate::database(&args.db, settings))?;
+    let db_path = crate::oci::resolve(&crate::database(&args.db, settings)?)?;
     if !db_path.exists() {
         bail!("{}: no such database", db_path.display());
     }

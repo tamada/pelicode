@@ -242,6 +242,7 @@ pelicode scan [OPTIONS] [PATHS]...
 
 | Option | Default | Description |
 | --- | --- | --- |
+| `--db <DB>` | settings file, else `pelicode.db` | Database file or `oci://` snapshot; repeat to check against several at once (they must share feature parameters) |
 | `--git <RANGE>` | | Check only the functions changed in a git range. The path, if any, is the repository (default `.`) |
 | `--threshold <X>` | 0.7 | Minimum [similarity](/glossary#similarity) to report |
 | `--min-tokens <N>` | 50 | Functions with fewer tokens are not checked |
@@ -379,7 +380,7 @@ crawl:
 | Key | Option | Description |
 | --- | --- | --- |
 | `version` | | Version of the format; must be `1` (required) |
-| `database` | `--db` | Database file, relative to the settings file |
+| `database` | `--db` | Database file, relative to the settings file, or `oci://` snapshot; a list such as `[pypi.db, crates.db]` for `scan` against several |
 | `scan.languages` | `--languages` | Languages to check |
 | `scan.threshold` | `--threshold` | Minimum similarity, from 0 to 1 |
 | `scan.min_tokens` | `--min-tokens` | Smallest function checked |

@@ -31,9 +31,9 @@ const VERSION: u32 = 1;
 pub struct Settings {
     /// Version of the settings format; must be 1.
     pub version: u32,
-    /// Database file, relative to the settings file.
+    /// Database file, relative to the settings file, or several for `scan`.
     #[serde(default)]
-    pub database: Option<PathBuf>,
+    pub database: Option<Databases>,
     /// Settings of `pelicode scan`.
     #[serde(default)]
     pub scan: ScanSettings,
@@ -100,6 +100,14 @@ impl StopValue {
     }
 }
 
+/// One database, or a list of them.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(untagged)]
+pub enum Databases {
+    One(PathBuf),
+    Many(Vec<PathBuf>),
+}
+
 /// A settings file and where it was found.
 #[derive(Debug)]
 pub struct Loaded {
@@ -108,13 +116,20 @@ pub struct Loaded {
 }
 
 impl Loaded {
-    /// The database of the settings, relative to the settings file.
-    pub fn database(&self) -> Option<PathBuf> {
-        let db = self.settings.database.as_ref()?;
-        Some(match self.path.parent() {
-            Some(dir) if db.is_relative() => dir.join(db),
-            _ => db.clone(),
-        })
+    /// The databases of the settings, relative to the settings file; empty
+    /// when there is none.
+    pub fn databases(&self) -> Vec<PathBuf> {
+        let list = match &self.settings.database {
+            None => return Vec::new(),
+            Some(Databases::One(db)) => std::slice::from_ref(db),
+            Some(Databases::Many(dbs)) => dbs.as_slice(),
+        };
+        list.iter()
+            .map(|db| match self.path.parent() {
+                Some(dir) if db.is_relative() && !crate::oci::is_reference(db) => dir.join(db),
+                _ => db.clone(),
+            })
+            .collect()
     }
 
     /// The stop threshold of the settings, if any.
@@ -274,7 +289,10 @@ crawl:
     fn yaml_and_json5_mean_the_same() {
         for (name, text) in [(".pelicode.yaml", YAML), (".pelicode.json5", JSON5)] {
             let s = parse(Path::new(name), text).unwrap();
-            assert_eq!(s.database.as_deref(), Some(Path::new("data/pelicode.db")));
+            assert_eq!(
+                s.database,
+                Some(Databases::One(PathBuf::from("data/pelicode.db")))
+            );
             assert_eq!(
                 s.scan.languages,
                 Some(vec![Language::Python, Language::Rust])
@@ -353,6 +371,28 @@ crawl:
             path: PathBuf::from("/work/repo/.pelicode.yaml"),
             settings: parse(Path::new("a.yaml"), "version: 1\ndatabase: db/p.db\n").unwrap(),
         };
-        assert_eq!(loaded.database(), Some(PathBuf::from("/work/repo/db/p.db")));
+        assert_eq!(loaded.databases(), [PathBuf::from("/work/repo/db/p.db")]);
+    }
+
+    #[test]
+    fn several_databases() {
+        let text =
+            "version: 1\ndatabase: [pypi.db, 'oci://quay.io/tama5/pelicode-db:crates-latest']\n";
+        for (name, text) in [
+            ("a.yaml", text.to_string()),
+            ("a.json5", "{version: 1, database: ['pypi.db', 'oci://quay.io/tama5/pelicode-db:crates-latest']}".to_string()),
+        ] {
+            let loaded = Loaded {
+                path: PathBuf::from("/work/repo/.pelicode.yaml"),
+                settings: parse(Path::new(name), &text).unwrap(),
+            };
+            assert_eq!(
+                loaded.databases(),
+                [
+                    PathBuf::from("/work/repo/pypi.db"),
+                    PathBuf::from("oci://quay.io/tama5/pelicode-db:crates-latest")
+                ]
+            );
+        }
     }
 }

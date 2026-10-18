@@ -370,6 +370,15 @@ Code that matches a library the checked project depends on is expected, so depen
 - The parsing lives in `pelicode_detect::dependencies`, and the detector counts the candidates left out (`Detector::excluded_as_dependencies`).
 ---
 
+### 7.7 Several Databases
+
+Snapshots are split by ecosystem, so `scan` can check against several databases at once: `--db` repeated, or a list for `database` in the settings file.
+
+- The databases must have been built with the same feature parameters (`ident_mode`, `kgram`, `window`, `minhash_size`, `bands`); otherwise `scan` refuses them, naming the parameter. The checked code is featurized at the fingerprint levels of all of them.
+- Each database is searched as in §7.2 to §7.6, and common code is left out with its own package counts: the stop threshold, as a percentage, is relative to the packages of each database, and IDF uses the counts of each database.
+- The candidates of all databases are ranked together, and `--max-candidates` applies to the merged list.
+- Commands that work on one database (`index`, `crawl`, `stats`, `clean`, `snapshot`, `export`) ask for `--db` when the settings file lists several.
+
 ## 8. Interfaces
 
 ### 8.1 Commands
@@ -396,7 +405,7 @@ Options used every time can be written in a settings file, in YAML or JSON5.
 - **Names**: `.pelicode.yaml`, `.pelicode.yml`, `.pelicode.json5` and `.pelicode.json` (read as JSON5).
 - **Discovery**: the current directory, then each directory above it, up to the root of the git repository (the directory holding `.git`). Several files in one directory are an error. `--config <FILE>` names a file, and `--no-config` disables settings files; both are accepted by every command.
 - **Precedence**: command line, then settings file, then built-in defaults. Lists (`--exclude`, `--exclude-path`) are merged with those of the file. Flags (`--idf`, `--fail-on-match`) can only switch a setting on.
-- **Keys**: `version` (must be 1), `database` (relative to the settings file), `scan.languages`, `scan.threshold`, `scan.min_tokens`, `scan.max_candidates`, `scan.min_shared`, `scan.stop_packages` (a number, or a percentage such as `"10%"`), `scan.idf`, `scan.fail_on_match`, `scan.exclude_dependencies`, `scan.exclude.packages`, `scan.exclude.paths`, `crawl.contact` and `crawl.delay_ms`. Each corresponds to the option of the same name.
+- **Keys**: `version` (must be 1), `database` (relative to the settings file; a list for several, §7.7), `scan.languages`, `scan.threshold`, `scan.min_tokens`, `scan.max_candidates`, `scan.min_shared`, `scan.stop_packages` (a number, or a percentage such as `"10%"`), `scan.idf`, `scan.fail_on_match`, `scan.exclude_dependencies`, `scan.exclude.packages`, `scan.exclude.paths`, `crawl.contact` and `crawl.delay_ms`. Each corresponds to the option of the same name.
 - **Validation**: unknown keys, an unsupported version, a threshold outside 0 to 1, invalid stop thresholds, package names and glob patterns are errors, reported with the file (and, for YAML, the line).
 - **Implementation**: YAML is read with serde-saphyr and JSON5 with json5, into the same serde types.
 
@@ -535,6 +544,7 @@ A command that runs evaluation experiments (`pelicode eval`) is not implemented 
 | Leaving out the dependencies of the checked code | Done |
 | Database cleanup (`pelicode clean`) | Done |
 | Snapshots (`pelicode snapshot`, OCI artifacts in quay.io, `pelicode pull` and `--db oci://...`) | Done (none published yet) |
+| Checking against several databases at once | Done |
 | CI, release, container, documentation site | Done (no release made yet) |
 
 ### 12.2 Not Implemented Yet
@@ -542,7 +552,7 @@ A command that runs evaluation experiments (`pelicode eval`) is not implemented 
 | Feature | Description |
 | --- | --- |
 | Detection of new versions | `list_updates(since)` with the RSS feeds of crates.io, PyPI updates, index.golang.org, ... |
-| Using snapshots | From the settings file and the GitHub Action (#25), several databases at once (#24), annotations checked before downloading (#26), periodic publication (#27) |
+| Using snapshots | From the settings file and the GitHub Action (#25), annotations checked before downloading (#26), periodic publication (#27) |
 | Evaluation | `pelicode eval` and the generation of evaluation data (§11.1) |
 | No dependency on the git command | Reading diffs with gix, the Rust implementation of git |
 

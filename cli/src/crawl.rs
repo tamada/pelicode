@@ -90,7 +90,7 @@ pub fn run(args: CrawlArgs, settings: Option<&Loaded>) -> Result<bool> {
         bail!("give packages, --list FILE or --top N");
     }
 
-    let db_path = crate::database(&args.db, settings);
+    let db_path = crate::database(&args.db, settings)?;
     let mut db = Database::open(&db_path, &config)
         .with_context(|| format!("cannot open {}", db_path.display()))?;
     let crawler = Crawler::new(client, config, args.force);
