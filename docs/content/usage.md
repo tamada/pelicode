@@ -344,7 +344,7 @@ Options used every time, such as the database, the thresholds and what to leave 
 ```yaml
 # .pelicode.yaml
 version: 1
-database: data/pelicode.db        # relative to this file
+database: data/pelicode.db        # relative to this file; or oci://..., or a list
 scan:
   languages: [python, rust]
   threshold: 0.6
