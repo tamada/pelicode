@@ -85,7 +85,7 @@ pelicode scan ./project-c
 
 シナリオ1〜3には、公開コードの参照用 DB が必要です。しかし、開発者や CI がそれぞれ DB を作るのは現実的ではありません。数千パッケージを1秒に1リクエストで取得すると数時間かかり、DB も数 GB 規模になるためです。次の分担を想定しています。
 
-1. **DB は1か所で作る**（例: 研究グループ）。サーバーで `pelicode crawl --top N` と `pelicode stats --refresh` を定期的に実行し、最新に保ちます。
+1. **DB は1か所で作る**（例: 研究グループ）。サーバーで `pelicode crawl --top N` を実行し、その後 `pelicode crawl --updates` と `pelicode stats --refresh` を定期的に実行し、最新に保ちます。
 2. **DB を配布する**。ソースコードを含まないスナップショット（`pelicode snapshot`）を、quay.io に OCI アーティファクトとして公開します。
 3. **利用者と CI はスナップショットをダウンロード**し、`pelicode scan` を実行するだけにします。
 
@@ -94,7 +94,7 @@ pelicode scan ./project-c
 | PyPI・Maven Central・Go モジュールプロキシ・RubyGems・crates.io からの取得 | 実装済み |
 | 取得済みのバージョンを飛ばすこと、同じファイルを1回だけ保存すること | 実装済み |
 | ハッシュごとの出現パッケージ数を、全体を数え直さずに更新すること | 実装済み |
-| 新しく公開されたバージョンの検知（crates.io の RSS、PyPI の更新情報など） | 未実装 |
+| 追跡中のパッケージの新しいバージョンの検知（`crawl --updates`） | 実装済み |
 | スナップショットの作成と quay.io への公開（`pelicode snapshot`、`just snapshot_push`） | 実装済み |
 | `scan` からのスナップショットの取得（`--db oci://...`、`pelicode pull`） | 実装済み |
 | 設定ファイルでのスナップショットの指定（`database: oci://...`） | 実装済み |

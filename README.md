@@ -128,6 +128,7 @@ pelicode crawl go golang.org/x/mod@v0.20.0
 pelicode crawl rubygems thor@1.3.0
 pelicode crawl crates uuid serde_json@1.0.140 --contact https://example.org/about
 pelicode crawl maven --list packages.txt         # one package per line; '#' starts a comment
+pelicode crawl pypi --updates                    # new versions of the PyPI packages already in the database
 ```
 
 - Without a version, the latest release is fetched.
@@ -275,7 +276,6 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow, adding a la
 
 ## Not implemented yet
 
-- Automatic detection of newly published versions (packages are currently given by name, by a list file or as the top N)
 - Using published snapshots from the GitHub Action, and a command for evaluation experiments (`pelicode eval`)
 - Fetching the most downloaded packages of Go, Maven Central and RubyGems
 

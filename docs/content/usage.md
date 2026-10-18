@@ -63,6 +63,7 @@ Without a version, the latest release is fetched.
 | --- | --- | --- |
 | `--list <FILE>` | | Read packages from a file, one per line. `#` starts a comment |
 | `--top <N>` | | Also crawl the N most downloaded packages (`pypi` and `crates` only) |
+| `--updates` | | Also check every package of the ecosystem already in the database for a newer version, and crawl the new ones |
 | `--force` | | Re-index versions that are already in the database |
 | `--refresh-stats` | | Recount common hashes afterwards (see [`stats`](#stats)) |
 | `--delay-ms <MS>` | 1000 | Minimum interval between two requests |
@@ -77,6 +78,7 @@ pelicode crawl maven --list maven-packages.txt --refresh-stats
 pelicode crawl go github.com/google/uuid
 pelicode crawl rubygems rack thor@1.3.0
 pelicode crawl crates --top 100 --contact https://example.org/about
+pelicode crawl pypi --updates --contact https://example.org/about   # new versions of the packages in the database
 ```
 
 What is fetched from each repository:
@@ -93,6 +95,7 @@ Good to know:
 
 - Archives are read in memory and discarded. Nothing is unpacked to disk, and no source code is stored.
 - Versions already indexed are skipped, so an interrupted crawl can simply be run again.
+- `--updates` keeps a database current, one request per package already in it; the time of the last check is recorded per ecosystem and shown at the next one.
 - A failed package does not stop the others. Failures are recorded in the database, and the exit status is 1 if any package failed.
 - Requests are sent one at a time. Be gentle with public services: keep the delay, and set `--contact` when crawling many packages.
 - For PyPI, the ranking used by `--top` comes from [hugovk/top-pypi-packages](https://github.com/hugovk/top-pypi-packages), not from PyPI itself; for crates.io, it is the all-time download count of crates.io. Maven Central, the Go module proxy and RubyGems have no such ranking; use `--list` for them.

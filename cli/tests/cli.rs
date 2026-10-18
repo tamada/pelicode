@@ -622,3 +622,12 @@ fn several_databases_at_once() {
     assert!(!mixed.status.success());
     assert!(String::from_utf8_lossy(&mixed.stderr).contains("kgram"));
 }
+
+#[test]
+fn updates_of_an_empty_database() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = db_arg(dir.path());
+    // Nothing to check, so nothing is fetched.
+    let out = pelicode(&["crawl", "pypi", "--updates", "--db", &db]);
+    assert!(out.contains("no pypi packages"), "{out}");
+}
