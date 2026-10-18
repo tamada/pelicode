@@ -283,13 +283,42 @@ jobs:
       - name: Setup Rust
         run: rustup update stable
 
+      # The first release is published by hand (crates.io can set up trusted publishing only
+      # for crates that exist), so crates already published at this version are skipped
+      # instead of failing the release.
+      - name: Check what is published already
+        id: check
+        env:
+          VERSION: ${{ needs.setup.outputs.version }}
+        run: |
+          missing=0
+          for crate in pelicode-core pelicode-db pelicode-detect pelicode-crawl pelicode-cli; do
+            status=$(curl -s -o /dev/null -w "%{http_code}" \
+              -A "pelicode release (https://github.com/tamada/pelicode)" \
+              "https://crates.io/api/v1/crates/$crate/$VERSION")
+            if [ "$status" = 200 ]; then
+              echo "$crate $VERSION is on crates.io already"
+            else
+              missing=$((missing + 1))
+            fi
+          done
+          if [ "$missing" -eq 0 ]; then
+            echo "::notice::every crate of $VERSION is on crates.io already; nothing to publish"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          elif [ "$missing" -ne 5 ]; then
+            echo "::error::only some crates of $VERSION are on crates.io; publish the rest by hand"
+            exit 1
+          fi
+
       - name: Authenticate with crates.io
         id: auth
+        if: steps.check.outputs.skip != 'true'
         uses: rust-lang/crates-io-auth-action@c6f97d42243bad5fab37ca0427f495c86d5b1a18 # v1.0.5
 
       # The five crates depend on each other; --workspace publishes them in dependency order
       # (pelicode-core, pelicode-db, pelicode-detect, pelicode-crawl, then pelicode-cli).
       - name: Publish
+        if: steps.check.outputs.skip != 'true'
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
         run: cargo publish --locked --workspace
