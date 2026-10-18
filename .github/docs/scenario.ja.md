@@ -96,7 +96,8 @@ pelicode scan ./project-c
 | ハッシュごとの出現パッケージ数を、全体を数え直さずに更新すること | 実装済み |
 | 新しく公開されたバージョンの検知（crates.io の RSS、PyPI の更新情報など） | 未実装 |
 | スナップショットの作成と quay.io への公開（`pelicode snapshot`、`just snapshot_push`） | 実装済み |
-| `scan` や GitHub Action からのスナップショットの取得 | 未実装（`just snapshot_pull` で手動） |
+| `scan` からのスナップショットの取得（`--db oci://...`、`pelicode pull`） | 実装済み |
+| 設定ファイルと GitHub Action からのスナップショットの利用 | 未実装（#25） |
 | 参照されなくなったデータの削除と、DB の容量の圧縮 | 実装済み（`pelicode clean`） |
 
 ## まとめ

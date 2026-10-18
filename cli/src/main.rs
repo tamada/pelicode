@@ -7,6 +7,7 @@
 
 mod crawl;
 mod git;
+mod oci;
 mod output;
 mod sarif;
 mod scan;
@@ -60,6 +61,8 @@ enum Command {
     /// Writes a copy of the database for checking only, to be distributed: without the data
     /// only indexing needs, optionally limited to some ecosystems or to the latest versions.
     Snapshot(SnapshotArgs),
+    /// Fetches a snapshot from an OCI registry into the cache, and prints its path.
+    Pull(PullArgs),
     /// Lists the supported languages and their file extensions.
     Languages,
 }
@@ -160,7 +163,8 @@ struct ExtractArgs {
 
 #[derive(Args)]
 struct ExportArgs {
-    /// Database file [default: `database` of the settings file, else pelicode.db].
+    /// Database file, or a snapshot as oci://REGISTRY/REPOSITORY:TAG [default: `database` of
+    /// the settings file, else pelicode.db].
     #[arg(long)]
     db: Option<PathBuf>,
     /// Output format.
@@ -208,6 +212,15 @@ struct SnapshotArgs {
     /// Format of the summary.
     #[arg(short, long, value_enum, default_value_t = SummaryFormat::Text)]
     format: SummaryFormat,
+}
+
+#[derive(Args)]
+struct PullArgs {
+    /// The snapshot, as oci://REGISTRY/REPOSITORY:TAG or oci://REGISTRY/REPOSITORY@DIGEST.
+    reference: String,
+    /// Also copy the snapshot to this file.
+    #[arg(short, long)]
+    out: Option<PathBuf>,
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -258,6 +271,7 @@ fn run(cli: Cli) -> Result<()> {
         Command::Stats(args) => stats::run(args, settings),
         Command::Clean(args) => clean(args, settings),
         Command::Snapshot(args) => snapshot(args, settings),
+        Command::Pull(args) => pull(args),
         Command::Crawl(args) => {
             if !crawl::run(args, settings)? {
                 std::process::exit(1);
@@ -355,6 +369,31 @@ fn snapshot(args: SnapshotArgs, settings: Option<&settings::Loaded>) -> Result<(
         ),
         SummaryFormat::Json => println!("{}", serde_json::to_string_pretty(&summary)?),
     }
+    Ok(())
+}
+
+/// `pelicode pull`: fetches a snapshot into the cache.
+fn pull(args: PullArgs) -> Result<()> {
+    let reference: oci::Reference = args.reference.parse()?;
+    let fetched = oci::fetch(&reference, &oci::cache_dir()?)?;
+    eprintln!(
+        "{} {reference} ({})",
+        if fetched.downloaded {
+            "fetched"
+        } else {
+            "up to date:"
+        },
+        fetched.digest
+    );
+    let path = match args.out {
+        Some(out) => {
+            std::fs::copy(&fetched.path, &out)
+                .with_context(|| format!("cannot write {}", out.display()))?;
+            out
+        }
+        None => fetched.path,
+    };
+    println!("{}", path.display());
     Ok(())
 }
 
@@ -498,7 +537,7 @@ fn extract(args: ExtractArgs) -> Result<()> {
 
 /// `pelicode export`: prints the functions stored in the database.
 fn export(args: ExportArgs, settings: Option<&settings::Loaded>) -> Result<()> {
-    let db_path = database(&args.db, settings);
+    let db_path = oci::resolve(&database(&args.db, settings))?;
     if !db_path.exists() {
         bail!("{}: no such database", db_path.display());
     }

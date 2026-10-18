@@ -20,6 +20,7 @@ Commands:
   stats      Shows database statistics and the hashes shared by the most packages
   clean      Removes files and functions no package version refers to any more, and shrinks the database file
   snapshot   Writes a copy of the database for checking only, to be distributed
+  pull       Fetches a snapshot from an OCI registry into the cache, and prints its path
   scan       Reports stored functions similar to the functions of the given code
   extract    Extracts the functions of the given files or directories and prints their features
   export     Prints the functions stored in the database
@@ -201,8 +202,34 @@ Snapshots are published in quay.io as [OCI artifacts](https://oras.land/), compr
 pelicode snapshot -o pypi.db --ecosystem pypi --latest
 oras login quay.io
 just snapshot_push pypi.db pypi                 # quay.io/tama5/pelicode-db:pypi-YYYYMMDD and :pypi-latest
-just snapshot_pull pypi-latest pypi.db          # elsewhere: fetch and decompress
-pelicode scan ./src --db pypi.db
+```
+
+Elsewhere, `scan` fetches it by itself (see [`pull`](#pull)):
+
+```sh
+pelicode scan ./src --db oci://quay.io/tama5/pelicode-db:pypi-latest
+```
+
+### `pull`
+
+Fetches a snapshot from an OCI registry into the cache and prints the path of the database. `scan`, `stats` and `export` do the same for a `--db` of the form `oci://REGISTRY/REPOSITORY:TAG` (or `@sha256:...`), so `pull` is needed only to fetch ahead of time or to keep a copy.
+
+```
+pelicode pull <REFERENCE> [-o <FILE>]
+```
+
+| Option | Description |
+| --- | --- |
+| `-o, --out <FILE>` | Also copy the snapshot to this file |
+
+- **Verified**: the download is checked against the digest of the layer in the manifest, then decompressed; neither ORAS nor zstd is needed.
+- **Cached**: snapshots are kept by digest in `$PELICODE_CACHE_DIR`, else the cache directory of the user (`~/.cache/pelicode` on Linux, `~/Library/Caches/pelicode` on macOS). When a tag still points to the same digest, only the manifest is fetched.
+- **Offline**: when the registry cannot be reached, the snapshot the tag pointed to last time is used, with a warning.
+- Public repositories need no login; pelicode asks the registry for an anonymous token.
+
+```
+fetched oci://quay.io/tama5/pelicode-db:pypi-latest (sha256:3f1c...)
+/home/user/.cache/pelicode/snapshots/sha256-3f1c....db
 ```
 
 ### `scan`

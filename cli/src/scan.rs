@@ -20,7 +20,8 @@ use crate::{extract_paths, open_output};
 pub struct ScanArgs {
     /// Files or directories to check; with --git, the repository (default: .).
     paths: Vec<PathBuf>,
-    /// Database file [default: `database` of the settings file, else pelicode.db].
+    /// Database file, or a snapshot as oci://REGISTRY/REPOSITORY:TAG [default: `database` of
+    /// the settings file, else pelicode.db].
     #[arg(long)]
     db: Option<PathBuf>,
     /// Check only the functions changed in a git range (BASE, BASE..HEAD or BASE...HEAD).
@@ -271,7 +272,7 @@ impl std::str::FromStr for StopThreshold {
 
 /// Runs the scan; returns whether any candidate was found.
 pub fn run(args: ScanArgs, settings: Option<&Loaded>) -> Result<bool> {
-    let db_path = crate::database(&args.db, settings);
+    let db_path = crate::oci::resolve(&crate::database(&args.db, settings))?;
     if !db_path.exists() {
         bail!("{}: no such database", db_path.display());
     }

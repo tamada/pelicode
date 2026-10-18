@@ -110,6 +110,7 @@ hex.go:10-44 parseID (tokens=275)
 | `pelicode stats` | DB の統計と、多くのパッケージに現れるハッシュを表示する |
 | `pelicode clean` | 参照されなくなったデータを削除し、DB を縮める |
 | `pelicode snapshot -o <FILE>` | 配布用に、検査専用の DB のコピーを書き出す |
+| `pelicode pull <oci://...>` | レジストリからスナップショットをキャッシュに取得する（`scan --db oci://...` でも取得する） |
 | `pelicode scan [PATHS]...` | 類似候補を検索する |
 | `pelicode extract <PATHS>...` | 関数の抽出結果と特徴量を表示する（DB は使わない） |
 | `pelicode export` | DB に入っている関数を一覧する |
@@ -275,7 +276,7 @@ just --list      # CI が実行するタスクの一覧（https://just.systems/ 
 ## 未実装のもの
 
 - 新しく公開されたバージョンの自動検知（現状は、パッケージ名・一覧ファイル・上位 N 件で指定します）
-- 公開済みスナップショットの `scan` や GitHub Action からの取得と、評価実験用のコマンド（`pelicode eval`）
+- 設定ファイルや GitHub Action からの公開済みスナップショットの利用、複数の DB を同時に照合すること、評価実験用のコマンド（`pelicode eval`）
 - Go・Maven・RubyGems のダウンロード数上位の取得
 
 ## ライセンス
