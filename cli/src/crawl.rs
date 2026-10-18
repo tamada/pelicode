@@ -24,6 +24,10 @@ pub struct CrawlArgs {
     /// Also crawl the N most downloaded packages (pypi and crates only).
     #[arg(long, value_name = "N")]
     top: Option<usize>,
+    /// Also check every package of the ecosystem already in the database for a newer version,
+    /// and crawl the new ones.
+    #[arg(long)]
+    updates: bool,
     /// Database file [default: `database` of the settings file, else pelicode.db].
     #[arg(long)]
     db: Option<PathBuf>,
@@ -83,16 +87,33 @@ pub fn run(args: CrawlArgs, settings: Option<&Loaded>) -> Result<bool> {
              the crawler's operator; please set --contact"
         );
     }
-    // The same package may come from the arguments, --list and --top.
-    let mut seen = std::collections::HashSet::new();
-    packages.retain(|p| seen.insert(p.clone()));
-    if packages.is_empty() {
-        bail!("give packages, --list FILE or --top N");
-    }
-
     let db_path = crate::database(&args.db, settings)?;
     let mut db = Database::open(&db_path, &config)
         .with_context(|| format!("cannot open {}", db_path.display()))?;
+    let ecosystem = args.ecosystem.name();
+    if args.updates {
+        let tracked = db.package_names(ecosystem)?;
+        let last = db
+            .updates_checked_at(ecosystem)?
+            .map(|t| format!("last checked {t}"))
+            .unwrap_or_else(|| "never checked before".into());
+        eprintln!(
+            "checking {} {ecosystem} packages for new versions ({last})",
+            tracked.len()
+        );
+        packages.extend(tracked);
+    }
+    // The same package may come from the arguments, --list, --top and --updates.
+    let mut seen = std::collections::HashSet::new();
+    packages.retain(|p| seen.insert(p.clone()));
+    if packages.is_empty() {
+        if args.updates {
+            println!("no {ecosystem} packages in {}", db_path.display());
+            return Ok(true);
+        }
+        bail!("give packages, --list FILE, --top N or --updates");
+    }
+
     let crawler = Crawler::new(client, config, args.force);
     let (mut indexed, mut skipped, mut failed) = (0, 0, 0);
     for (i, spec) in packages.iter().enumerate() {
@@ -137,6 +158,9 @@ pub fn run(args: CrawlArgs, settings: Option<&Loaded>) -> Result<bool> {
         }
     }
     println!("{indexed} indexed, {skipped} skipped, {failed} failed");
+    if args.updates {
+        db.record_updates_check(ecosystem)?;
+    }
     if args.refresh_stats {
         let info = db.refresh_hash_stats()?;
         println!(

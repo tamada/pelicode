@@ -306,6 +306,12 @@ Packages are given by name (`NAME[@VERSION]` and the like), in a list file (`--l
 
 ---
 
+### 6.5 New Versions
+
+`pelicode crawl <ECOSYSTEM> --updates` keeps a database current: it asks the repository for the latest version of every package of the ecosystem already in the database, and crawls the versions not indexed yet; the others are skipped after one metadata request. The time of the check is recorded per ecosystem in `meta` (`updates_checked_at.<ECOSYSTEM>`) and shown at the next one. With `--top N` or a list, new packages are added in the same run.
+
+Polling the tracked packages works the same way for every repository and misses nothing, at the cost of one request per package (about 17 minutes for 1,000 packages at the default pace). The feeds of the repositories were not used: those of PyPI and RubyGems hold only the last few dozen updates, and Maven Central has none.
+
 ## 7. Detection (pelicode-detect)
 
 ### 7.1 What Is Checked
@@ -545,6 +551,7 @@ A command that runs evaluation experiments (`pelicode eval`) is not implemented 
 | Database cleanup (`pelicode clean`) | Done |
 | Snapshots (`pelicode snapshot`, OCI artifacts in quay.io, `pelicode pull` and `--db oci://...`) | Done (none published yet) |
 | Checking against several databases at once | Done |
+| Crawling new versions of the tracked packages (`crawl --updates`) | Done |
 | Annotations of snapshots, checked before downloading | Done |
 | Snapshots in the settings file | Done |
 | CI, release, container, documentation site | Done (no release made yet) |
@@ -553,7 +560,6 @@ A command that runs evaluation experiments (`pelicode eval`) is not implemented 
 
 | Feature | Description |
 | --- | --- |
-| Detection of new versions | `list_updates(since)` with the RSS feeds of crates.io, PyPI updates, index.golang.org, ... |
 | Using snapshots | Periodic publication (#27) |
 | Evaluation | `pelicode eval` and the generation of evaluation data (§11.1) |
 | No dependency on the git command | Reading diffs with gix, the Rust implementation of git |

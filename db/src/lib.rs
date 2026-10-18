@@ -734,6 +734,84 @@ impl Database {
         })
     }
 
+    /// Names of the packages of `ecosystem` with at least one version, crawled
+    /// or failed, sorted: the packages to check for new versions.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Sqlite`] when the database cannot be read.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use pelicode_core::Config;
+    /// use pelicode_db::{Database, PackageInfo};
+    ///
+    /// let dir = tempfile::tempdir().unwrap();
+    /// let mut db = Database::open(dir.path().join("pelicode.db"), &Config::default()).unwrap();
+    /// for name in ["six", "requests"] {
+    ///     let package = PackageInfo {
+    ///         ecosystem: "pypi".into(), name: name.into(), version: "1.0".into(), ..PackageInfo::default()
+    ///     };
+    ///     db.index(&package, &[]).unwrap();
+    /// }
+    /// assert_eq!(db.package_names("pypi").unwrap(), ["requests", "six"]);
+    /// assert!(db.package_names("crates").unwrap().is_empty());
+    /// ```
+    pub fn package_names(&self, ecosystem: &str) -> Result<Vec<String>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT p.name FROM package p JOIN ecosystem e ON e.id = p.ecosystem_id
+             WHERE e.name = ?1 AND p.id IN (SELECT package_id FROM package_version)
+             ORDER BY p.name",
+        )?;
+        let names = stmt.query_map([ecosystem], |r| r.get(0))?;
+        Ok(names.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// When `ecosystem` was last checked for new versions (RFC 3339), if ever.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Sqlite`] when the database cannot be read.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use pelicode_core::Config;
+    /// use pelicode_db::Database;
+    ///
+    /// let dir = tempfile::tempdir().unwrap();
+    /// let db = Database::open(dir.path().join("pelicode.db"), &Config::default()).unwrap();
+    /// assert_eq!(db.updates_checked_at("pypi").unwrap(), None);
+    /// db.record_updates_check("pypi").unwrap();
+    /// assert!(db.updates_checked_at("pypi").unwrap().is_some());
+    /// ```
+    pub fn updates_checked_at(&self, ecosystem: &str) -> Result<Option<String>> {
+        Ok(self
+            .meta()?
+            .remove(&format!("updates_checked_at.{ecosystem}")))
+    }
+
+    /// Records that `ecosystem` has been checked for new versions now.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Snapshot`] when this database is a snapshot, and [`Error::Sqlite`]
+    /// when it cannot be written.
+    ///
+    /// # Examples
+    ///
+    /// See [`Database::updates_checked_at`].
+    pub fn record_updates_check(&self, ecosystem: &str) -> Result<()> {
+        self.refuse_snapshot()?;
+        self.conn.execute(
+            "INSERT INTO meta (key, value) VALUES (?1, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+             ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+            [format!("updates_checked_at.{ecosystem}")],
+        )?;
+        Ok(())
+    }
+
     /// Names of the ecosystems that have packages, sorted.
     ///
     /// # Errors

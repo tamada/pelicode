@@ -128,6 +128,7 @@ pelicode crawl go golang.org/x/mod@v0.20.0
 pelicode crawl rubygems thor@1.3.0
 pelicode crawl crates uuid serde_json@1.0.140 --contact https://example.org/about
 pelicode crawl maven --list packages.txt         # 1行に1パッケージ（# 以降はコメント）
+pelicode crawl pypi --updates                    # DB にある PyPI のパッケージの新しいバージョン
 ```
 
 - バージョンを省くと最新版を取得します。
@@ -275,7 +276,6 @@ just --list      # CI が実行するタスクの一覧（https://just.systems/ 
 
 ## 未実装のもの
 
-- 新しく公開されたバージョンの自動検知（現状は、パッケージ名・一覧ファイル・上位 N 件で指定します）
 - GitHub Action からの公開済みスナップショットの利用と、評価実験用のコマンド（`pelicode eval`）
 - Go・Maven・RubyGems のダウンロード数上位の取得
 
