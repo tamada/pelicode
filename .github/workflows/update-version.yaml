@@ -33,6 +33,11 @@ jobs:
           # The version badge of the documentation site.
           sed -E "s/Version-[0-9][^-]*-blue/Version-${TAG}-blue/" docs/content/_index.md > a ; mv a docs/content/_index.md
           sed "s/ARG VERSION=.*/ARG VERSION=${TAG}/g" Containerfile > a ; mv a Containerfile
+          # The version and the release date of CITATION.cff ("Cite this repository").
+          awk -v tag="${TAG}" -v date="$(date -u +%F)" '
+            /^date-released: / { next }
+            /^version: / { print "version: " tag; print "date-released: " date; next }
+            { print }' CITATION.cff > a ; mv a CITATION.cff
           # The workspace members' versions are recorded in the lock file too, and --locked
           # refuses a lock file that disagrees with the manifests.
           cargo update --workspace
