@@ -97,7 +97,7 @@ pelicode scan ./project-c
 | 新しく公開されたバージョンの検知（crates.io の RSS、PyPI の更新情報など） | 未実装 |
 | スナップショットの作成と quay.io への公開（`pelicode snapshot`、`just snapshot_push`） | 実装済み |
 | `scan` からのスナップショットの取得（`--db oci://...`、`pelicode pull`） | 実装済み |
-| 設定ファイルと GitHub Action からのスナップショットの利用 | 未実装（#25） |
+| 設定ファイルでのスナップショットの指定（`database: oci://...`） | 実装済み |
 | 参照されなくなったデータの削除と、DB の容量の圧縮 | 実装済み（`pelicode clean`） |
 
 ## まとめ

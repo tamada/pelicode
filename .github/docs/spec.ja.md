@@ -405,7 +405,7 @@ getter、`equals`、定型的な例外処理のように、多くのパッケー
 - **ファイル名**: `.pelicode.yaml`、`.pelicode.yml`、`.pelicode.json5`、`.pelicode.json`（JSON5 として読む）。
 - **探し方**: カレントディレクトリから順に上のディレクトリへ、git リポジトリのルート（`.git` のあるディレクトリ）まで探す。同じディレクトリに複数あればエラーにする。`--config <FILE>` でファイルを指定でき、`--no-config` で設定ファイルを使わない。どちらも全コマンドで使える。
 - **優先順位**: コマンドライン、設定ファイル、既定値の順。リストのオプション（`--exclude`、`--exclude-path`）は設定ファイルのリストに追加する。フラグ（`--idf`、`--fail-on-match`）は有効にすることしかできない。
-- **項目**: `version`（1 でなければならない）、`database`（設定ファイルからの相対パス。複数ならリスト、§7.7）、`scan.languages`、`scan.threshold`、`scan.min_tokens`、`scan.max_candidates`、`scan.min_shared`、`scan.stop_packages`（数、または `"10%"` のような割合）、`scan.idf`、`scan.fail_on_match`、`scan.exclude_dependencies`、`scan.exclude.packages`、`scan.exclude.paths`、`crawl.contact`、`crawl.delay_ms`。それぞれ同じ名前のオプションに対応する。
+- **項目**: `version`（1 でなければならない）、`database`（設定ファイルからの相対パスのファイルか、`oci://` のスナップショット。複数ならリスト、§7.7）、`scan.languages`、`scan.threshold`、`scan.min_tokens`、`scan.max_candidates`、`scan.min_shared`、`scan.stop_packages`（数、または `"10%"` のような割合）、`scan.idf`、`scan.fail_on_match`、`scan.exclude_dependencies`、`scan.exclude.packages`、`scan.exclude.paths`、`crawl.contact`、`crawl.delay_ms`。それぞれ同じ名前のオプションに対応する。
 - **検査**: 未知の項目、対応していない版、0〜1 の範囲外の閾値、不正な除外の閾値・パッケージ名・グロブパターンはエラーにし、ファイル名（YAML なら行も）を示す。
 - **実装**: YAML は serde-saphyr、JSON5 は json5 で、同じ serde の型に読み込む。
 
@@ -545,6 +545,7 @@ pelicode-core、pelicode-db、pelicode-detect、pelicode-crawl はライブラ�
 | データベースの掃除（`pelicode clean`） | 実装済み |
 | スナップショット（`pelicode snapshot`、quay.io の OCI アーティファクト、`pelicode pull` と `--db oci://...`） | 実装済み（公開は未実施） |
 | 複数の DB との同時照合 | 実装済み |
+| 設定ファイルでのスナップショットの指定 | 実装済み |
 | CI、リリース、コンテナ、ドキュメントサイト | 実装済み（実際のリリースは未実施） |
 
 ### 12.2 未実装の機能
@@ -552,7 +553,7 @@ pelicode-core、pelicode-db、pelicode-detect、pelicode-crawl はライブラ�
 | 機能 | 内容 |
 | --- | --- |
 | 新しいバージョンの検知 | crates.io の RSS、PyPI の更新情報、index.golang.org などを使った `list_updates(since)` |
-| スナップショットの利用 | 設定ファイルと GitHub Action からの利用（#25）、ダウンロード前の注釈の確認（#26）、定期的な公開（#27） |
+| スナップショットの利用 | ダウンロード前の注釈の確認（#26）、定期的な公開（#27） |
 | 評価実験 | `pelicode eval` と評価データの生成（§11.1） |
 | git コマンドへの依存の解消 | gix（Rust 実装の git）による差分の取得 |
 

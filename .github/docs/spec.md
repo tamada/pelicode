@@ -405,7 +405,7 @@ Options used every time can be written in a settings file, in YAML or JSON5.
 - **Names**: `.pelicode.yaml`, `.pelicode.yml`, `.pelicode.json5` and `.pelicode.json` (read as JSON5).
 - **Discovery**: the current directory, then each directory above it, up to the root of the git repository (the directory holding `.git`). Several files in one directory are an error. `--config <FILE>` names a file, and `--no-config` disables settings files; both are accepted by every command.
 - **Precedence**: command line, then settings file, then built-in defaults. Lists (`--exclude`, `--exclude-path`) are merged with those of the file. Flags (`--idf`, `--fail-on-match`) can only switch a setting on.
-- **Keys**: `version` (must be 1), `database` (relative to the settings file; a list for several, §7.7), `scan.languages`, `scan.threshold`, `scan.min_tokens`, `scan.max_candidates`, `scan.min_shared`, `scan.stop_packages` (a number, or a percentage such as `"10%"`), `scan.idf`, `scan.fail_on_match`, `scan.exclude_dependencies`, `scan.exclude.packages`, `scan.exclude.paths`, `crawl.contact` and `crawl.delay_ms`. Each corresponds to the option of the same name.
+- **Keys**: `version` (must be 1), `database` (a file relative to the settings file, or an `oci://` snapshot; a list for several, §7.7), `scan.languages`, `scan.threshold`, `scan.min_tokens`, `scan.max_candidates`, `scan.min_shared`, `scan.stop_packages` (a number, or a percentage such as `"10%"`), `scan.idf`, `scan.fail_on_match`, `scan.exclude_dependencies`, `scan.exclude.packages`, `scan.exclude.paths`, `crawl.contact` and `crawl.delay_ms`. Each corresponds to the option of the same name.
 - **Validation**: unknown keys, an unsupported version, a threshold outside 0 to 1, invalid stop thresholds, package names and glob patterns are errors, reported with the file (and, for YAML, the line).
 - **Implementation**: YAML is read with serde-saphyr and JSON5 with json5, into the same serde types.
 
@@ -545,6 +545,7 @@ A command that runs evaluation experiments (`pelicode eval`) is not implemented 
 | Database cleanup (`pelicode clean`) | Done |
 | Snapshots (`pelicode snapshot`, OCI artifacts in quay.io, `pelicode pull` and `--db oci://...`) | Done (none published yet) |
 | Checking against several databases at once | Done |
+| Snapshots in the settings file | Done |
 | CI, release, container, documentation site | Done (no release made yet) |
 
 ### 12.2 Not Implemented Yet
@@ -552,7 +553,7 @@ A command that runs evaluation experiments (`pelicode eval`) is not implemented 
 | Feature | Description |
 | --- | --- |
 | Detection of new versions | `list_updates(since)` with the RSS feeds of crates.io, PyPI updates, index.golang.org, ... |
-| Using snapshots | From the settings file and the GitHub Action (#25), annotations checked before downloading (#26), periodic publication (#27) |
+| Using snapshots | Annotations checked before downloading (#26), periodic publication (#27) |
 | Evaluation | `pelicode eval` and the generation of evaluation data (§11.1) |
 | No dependency on the git command | Reading diffs with gix, the Rust implementation of git |
 
