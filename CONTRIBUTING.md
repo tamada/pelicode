@@ -126,7 +126,7 @@ Two versions protect users from mixing incompatible data. Bump them in the same 
 
 ## Releases
 
-Releases are made by the maintainer from `release/vX.Y.Z` branches; the workflows build the binaries, the container image and the crates. The procedure is being written (#10).
+Releases are made by the maintainer from `release/vX.Y.Z` branches; the workflows build the binaries, the container image and the crates. See the [release procedure](.github/docs/release.md) for the steps, the secrets and the first release.
 
 ## License
 
