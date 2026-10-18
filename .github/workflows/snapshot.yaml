@@ -1,0 +1,100 @@
+name: snapshot
+
+# Builds a reference database of each ecosystem from scratch once a month, and
+# publishes its snapshot in quay.io as <ECOSYSTEM>-YYYYMMDD and <ECOSYSTEM>-latest.
+# Dated tags are kept, so that experiments can refer to the snapshot they used.
+on:
+  schedule:
+    - cron: "0 3 1 * *"
+  workflow_dispatch:
+    inputs:
+      top:
+        description: Number of the most downloaded packages of pypi and crates
+        required: false
+        default: "500"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: snapshot
+  cancel-in-progress: false
+
+jobs:
+  snapshot:
+    if: github.repository == 'tamada/pelicode'
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        ecosystem: [pypi, crates, maven, go, rubygems]
+    env:
+      ECOSYSTEM: ${{ matrix.ecosystem }}
+      TOP: ${{ inputs.top || '500' }}
+      CONTACT: https://github.com/tamada/pelicode
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # The database and its snapshot take several gigabytes for a few hundred packages.
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h "$RUNNER_TEMP"
+          echo "WORK=$RUNNER_TEMP/snapshot" >> "$GITHUB_ENV"
+
+      - name: Install just
+        uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        with:
+          tool: just
+
+      - name: Setup ORAS
+        uses: oras-project/setup-oras@005458ad77f1c8facd38a094e4af2e69e5607ff4 # v2.0.2
+
+      - name: Build pelicode
+        run: |
+          cargo build --locked --release -p pelicode-cli
+          echo "$GITHUB_WORKSPACE/target/release" >> "$GITHUB_PATH"
+
+      # A package that fails is recorded in the database and does not stop the others;
+      # crawl then exits with 1, which is not a reason to publish nothing.
+      - name: Crawl
+        run: |
+          mkdir -p "$WORK"
+          case "$ECOSYSTEM" in
+            pypi | crates) source=(--top "$TOP") ;;
+            *) source=(--list ".github/snapshots/$ECOSYSTEM.txt") ;;
+          esac
+          pelicode crawl "$ECOSYSTEM" "${source[@]}" --db "$WORK/full.db" \
+            --contact "$CONTACT" --no-config || echo "::warning::some $ECOSYSTEM packages failed"
+          pelicode stats --db "$WORK/full.db" --refresh --no-config
+
+      - name: Write the snapshot
+        run: |
+          pelicode snapshot --db "$WORK/full.db" -o "$WORK/$ECOSYSTEM.db" \
+            --ecosystem "$ECOSYSTEM" --latest \
+            --annotations "$WORK/$ECOSYSTEM.db.annotations.json" --no-config
+          rm "$WORK/full.db"
+          df -h "$RUNNER_TEMP"
+
+      - name: Log in to quay.io
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: quay.io
+          username: ${{ secrets.QUAY_ACCOUNT }}
+          password: ${{ secrets.QUAY_TOKEN }}
+
+      - name: Push the snapshot
+        run: just snapshot_push "$WORK/$ECOSYSTEM.db" "$ECOSYSTEM"
+
+      - name: Summary
+        run: |
+          reference="oci://quay.io/tama5/pelicode-db:$ECOSYSTEM-latest"
+          {
+            echo "## $ECOSYSTEM"
+            echo
+            echo '```'
+            pelicode pull "$reference" --info
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
