@@ -568,7 +568,7 @@ The monthly `snapshot` workflow was run on 2026-10-18 on a GitHub-hosted runner 
 | GitHub Action for pull requests (tamada/pelicode-action) | Done |
 | Leaving out the dependencies of the checked code | Done |
 | Database cleanup (`pelicode clean`) | Done |
-| Snapshots (`pelicode snapshot`, OCI artifacts in quay.io, `pelicode pull` and `--db oci://...`) | Done (none published yet) |
+| Snapshots (`pelicode snapshot`, OCI artifacts in quay.io, `pelicode pull` and `--db oci://...`), published monthly | Done |
 | Checking against several databases at once | Done |
 | Crawling new versions of the tracked packages (`crawl --updates`) | Done |
 | Annotations of snapshots, checked before downloading | Done |
@@ -579,7 +579,6 @@ The monthly `snapshot` workflow was run on 2026-10-18 on a GitHub-hosted runner 
 
 | Feature | Description |
 | --- | --- |
-| Using snapshots | Periodic publication (#27) |
 | Evaluation | `pelicode eval` and the generation of evaluation data (§11.1) |
 | No dependency on the git command | Reading diffs with gix, the Rust implementation of git |
 

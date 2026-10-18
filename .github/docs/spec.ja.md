@@ -568,7 +568,7 @@ pelicode-core、pelicode-db、pelicode-detect、pelicode-crawl はライブラ�
 | PR を検査する GitHub Action（tamada/pelicode-action） | 実装済み |
 | 検査するコードの依存パッケージの除外 | 実装済み |
 | データベースの掃除（`pelicode clean`） | 実装済み |
-| スナップショット（`pelicode snapshot`、quay.io の OCI アーティファクト、`pelicode pull` と `--db oci://...`） | 実装済み（公開は未実施） |
+| スナップショット（`pelicode snapshot`、quay.io の OCI アーティファクト、`pelicode pull` と `--db oci://...`）と毎月の公開 | 実装済み |
 | 複数の DB との同時照合 | 実装済み |
 | 追跡中のパッケージの新しいバージョンの取得（`crawl --updates`） | 実装済み |
 | スナップショットの注釈と、ダウンロード前の確認 | 実装済み |
@@ -579,7 +579,6 @@ pelicode-core、pelicode-db、pelicode-detect、pelicode-crawl はライブラ�
 
 | 機能 | 内容 |
 | --- | --- |
-| スナップショットの利用 | 定期的な公開（#27） |
 | 評価実験 | `pelicode eval` と評価データの生成（§11.1） |
 | git コマンドへの依存の解消 | gix（Rust 実装の git）による差分の取得 |
 
