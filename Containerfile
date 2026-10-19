@@ -21,7 +21,7 @@ FROM debian:trixie-slim
 
 ARG GIT_REVISION=unknown
 ARG BUILD_DATE=unknown
-ARG VERSION=unknown
+ARG VERSION=0.1.0
 
 LABEL org.opencontainers.image.title="pelicode" \
       org.opencontainers.image.description="Know where your code came from." \

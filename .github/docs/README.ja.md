@@ -65,7 +65,7 @@ cargo install pelicode-cli
 docker run --rm -v "$PWD":/workdir quay.io/tama5/pelicode --help
 ```
 
-Homebrew の Formula、crates.io の crate、コンテナイメージは、最初のリリースと一緒に公開します。それまではソースからビルドしてください。
+Linux・macOS・Windows（x64 と arm64）のアーカイブを、各[リリース](https://github.com/tamada/pelicode/releases)に添付しています。ソースからビルドする場合は次のとおりです。
 
 ```bash
 cargo install --path cli
