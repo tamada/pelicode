@@ -53,6 +53,10 @@ jobs:
   publish:
     runs-on: ${{ matrix.os }}
     needs: setup
+    # Uploading to the draft release needs write access: a read-only token does not even
+    # see a draft ("release not found").
+    permissions:
+      contents: write
     outputs:
       appname: ${{ needs.setup.outputs.appname }}
       tag: ${{ needs.setup.outputs.tag }}
