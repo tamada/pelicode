@@ -10,7 +10,7 @@ authors.workspace = true
 description = "Know where your code came from: finds code similar to published open-source packages, function by function"
 keywords = ["code-clone", "plagiarism", "license", "provenance", "cli"]
 categories = ["command-line-utilities", "development-tools"]
-readme = "../README.md"
+readme = "README.md"
 
 [dependencies]
 anyhow = "1.0.104"

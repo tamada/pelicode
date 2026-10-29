@@ -10,6 +10,7 @@ authors.workspace = true
 description = "Search for functions similar to known open-source code, for pelicode"
 keywords = ["code-clone", "fingerprint", "similarity"]
 categories = ["development-tools"]
+readme = "README.md"
 
 [dependencies]
 ignore = "0.4.33"

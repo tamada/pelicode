@@ -10,6 +10,7 @@ authors.workspace = true
 description = "SQLite storage of function fingerprints and provenance for pelicode"
 keywords = ["code-clone", "fingerprint", "sqlite"]
 categories = ["development-tools"]
+readme = "README.md"
 
 [dependencies]
 pelicode-core.workspace = true
