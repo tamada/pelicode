@@ -67,7 +67,7 @@ Once per repository:
 - The release `vX.Y.Z` is published (not a draft), with six archives that each hold `pelicode` (or `pelicode.exe`), `README.md` and `LICENSE`.
 - `pelicode --version` of an archive prints `X.Y.Z`.
 - `docker run --rm quay.io/tama5/pelicode:X.Y.Z --version` works on amd64 and arm64.
-- `cargo install pelicode-cli` installs `X.Y.Z`.
+- `cargo install pelicode` installs `X.Y.Z`.
 - `brew upgrade tamada/tap/pelicode` (or `brew install`) installs `X.Y.Z`.
 - The version badge of the site shows `X.Y.Z`, and GitHub's "Cite this repository" shows the version and the date.
 

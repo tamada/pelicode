@@ -67,7 +67,7 @@
 - リリース `vX.Y.Z` が公開されていて（下書きではなく）、6 つのアーカイブが添付されている。各アーカイブには `pelicode`（または `pelicode.exe`）、`README.md`、`LICENSE` が入っている。
 - アーカイブの `pelicode --version` が `X.Y.Z` を表示する。
 - amd64 と arm64 で `docker run --rm quay.io/tama5/pelicode:X.Y.Z --version` が動く。
-- `cargo install pelicode-cli` で `X.Y.Z` が入る。
+- `cargo install pelicode` で `X.Y.Z` が入る。
 - `brew upgrade tamada/tap/pelicode`（または `brew install`）で `X.Y.Z` が入る。
 - サイトの版のバッジが `X.Y.Z` を示し、GitHub の「Cite this repository」に版と日付が出る。
 

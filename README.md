@@ -61,7 +61,7 @@ With Homebrew, Cargo, Docker, or from source (Rust 1.90 or later is required for
 
 ```bash
 brew install tamada/tap/pelicode
-cargo install pelicode-cli
+cargo install pelicode
 docker run --rm -v "$PWD":/workdir quay.io/tama5/pelicode --help
 ```
 
@@ -265,7 +265,7 @@ The database records the parameters it was built with, and adding to it with dif
 | [db](db) | pelicode-db | SQLite storage, lookups and hash counts |
 | [detect](detect) | pelicode-detect | Search for similar code candidates |
 | [crawl](crawl) | pelicode-crawl | Fetching from PyPI, Maven Central, Go, RubyGems and crates.io |
-| [cli](cli) | pelicode-cli | The `pelicode` command |
+| [cli](cli) | pelicode | The `pelicode` command |
 
 ```bash
 cargo test       # tests (no network access)

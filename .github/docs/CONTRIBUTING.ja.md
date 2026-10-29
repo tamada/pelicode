@@ -42,7 +42,7 @@ core  ←  db  ←  detect  ←  cli
 | `db`（pelicode-db） | SQLite への保存、検索、互換性の確認、ハッシュの集計、不要データの削除 |
 | `detect`（pelicode-detect） | 候補の検索、類似度、検査対象の依存関係 |
 | `crawl`（pelicode-crawl） | 公開リポジトリからのパッケージの取得 |
-| `cli`（pelicode-cli） | `pelicode` コマンド、設定ファイル、git の差分、出力形式、SARIF |
+| `cli`（pelicode） | `pelicode` コマンド、設定ファイル、git の差分、出力形式、SARIF |
 
 そのほか、`.github/workflows/`（CI とリリース）、`.github/docs/`（仕様と利用シナリオ）、`docs/`（Hugo サイト）、`Containerfile`、`Justfile` があります。GitHub Action は別のリポジトリ [tamada/pelicode-action](https://github.com/tamada/pelicode-action) にあります。
 

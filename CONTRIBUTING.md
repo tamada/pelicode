@@ -42,7 +42,7 @@ core  ←  db  ←  detect  ←  cli
 | `db` (pelicode-db) | SQLite storage, lookups, compatibility checks, hash statistics, cleanup |
 | `detect` (pelicode-detect) | Candidate search, similarity, dependencies of the checked code |
 | `crawl` (pelicode-crawl) | Fetching packages from public repositories |
-| `cli` (pelicode-cli) | The `pelicode` command, settings files, git diffs, output formats, SARIF |
+| `cli` (pelicode) | The `pelicode` command, settings files, git diffs, output formats, SARIF |
 
 Other places: `.github/workflows/` (CI and releases), `.github/docs/` (specification and scenarios), `docs/` (the Hugo site), `Containerfile`, `Justfile`. The GitHub Action is in its own repository, [tamada/pelicode-action](https://github.com/tamada/pelicode-action).
 

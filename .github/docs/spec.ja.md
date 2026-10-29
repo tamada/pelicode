@@ -106,7 +106,7 @@ flowchart LR
 | pelicode-db（`db`） | SQLite への保存と検索、互換性の検査、出現パッケージ数の集計 | core |
 | pelicode-detect（`detect`） | 候補の探索と類似度の計算 | core、db |
 | pelicode-crawl（`crawl`） | 公開リポジトリからの取得、改ざん検査、アーカイブの読み取り、ライセンスの識別 | core、db |
-| pelicode-cli（`cli`） | `pelicode` コマンド。git の差分の解釈と出力の整形を含む | すべて |
+| pelicode（`cli`） | `pelicode` コマンド。git の差分の解釈と出力の整形を含む | すべて |
 
 ---
 

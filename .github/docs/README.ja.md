@@ -61,7 +61,7 @@ Homebrew、Cargo、Docker、ソースからの4通りがあります（Cargo と
 
 ```bash
 brew install tamada/tap/pelicode
-cargo install pelicode-cli
+cargo install pelicode
 docker run --rm -v "$PWD":/workdir quay.io/tama5/pelicode --help
 ```
 
@@ -265,7 +265,7 @@ DB には作成時のパラメータが記録されます。異なるパラメ�
 | [db](../../db) | pelicode-db | SQLite への保存、検索用の問い合わせ、ハッシュの集計 |
 | [detect](../../detect) | pelicode-detect | 類似候補の検索 |
 | [crawl](../../crawl) | pelicode-crawl | PyPI・Maven Central・Go・RubyGems・crates.io からの取得 |
-| [cli](../../cli) | pelicode-cli | `pelicode` コマンド |
+| [cli](../../cli) | pelicode | `pelicode` コマンド |
 
 ```bash
 cargo test       # テスト（ネットワークには接続しません）
