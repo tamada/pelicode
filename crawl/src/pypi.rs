@@ -1,4 +1,11 @@
 //! PyPI: releases via the JSON API, sources from the sdist (or a wheel).
+//!
+//! Package names are stored in their PEP 503 form ([`normalize`]), so
+//! `Typing_Extensions` and `typing-extensions` are one package. The sdist is
+//! preferred because it holds the sources as written; a wheel is taken only
+//! when a release has no sdist. [`top_packages`] reads the download ranking
+//! of [hugovk/top-pypi-packages](https://github.com/hugovk/top-pypi-packages),
+//! which is not an official PyPI service.
 
 use serde_json::Value;
 

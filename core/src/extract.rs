@@ -1,4 +1,16 @@
 //! Function extraction and feature computation for a single source file.
+//!
+//! [`extract_source`] turns a source text into one [`FunctionFeatures`] per
+//! function; [`extract_bytes`] and [`extract_file`] wrap the result in a
+//! [`FileFeatures`] with the path and the SHA-256 of the content, which the
+//! database uses to store each distinct file once.
+//!
+//! Each function carries its location (lines, columns and byte ranges), its
+//! size (tokens, AST nodes, depth), the index of its enclosing function, an
+//! exact hash per [`Level`], and, for the levels that get
+//! fingerprints, a [`LevelFeatures`] with the winnowing fingerprints, the
+//! MinHash signature and the LSH buckets. Functions shorter than
+//! [`Config::min_tokens`](crate::Config::min_tokens) get exact hashes only.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

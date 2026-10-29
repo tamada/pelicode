@@ -1,4 +1,17 @@
 //! Exact hashes, winnowing fingerprints, MinHash signatures and LSH buckets.
+//!
+//! - [`Hash128`]: the first 128 bits of BLAKE3 over a whole normalized token
+//!   sequence, for exact matches.
+//! - [`kgram_hashes`] and [`winnow`]: the token sequence is cut into k-grams,
+//!   each hashed with XXH3, and winnowing keeps the minimum hash of every
+//!   window of `w` k-grams. Any match of at least `w + k - 1` tokens is
+//!   therefore found through at least one shared [`Fingerprint`], however
+//!   the rest of the functions differ.
+//! - [`minhash`]: a signature estimating the Jaccard similarity of two
+//!   fingerprint sets ([`minhash_similarity`]).
+//! - [`lsh_buckets`]: the signature is cut into bands, each hashed into a
+//!   bucket. Functions sharing a bucket are the candidates worth comparing,
+//!   so the detector need not compare every pair.
 
 use std::fmt;
 

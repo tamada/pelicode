@@ -1,8 +1,69 @@
-//! Detection of functions similar to the stored ones (specification §7).
+//! Detection of functions similar to the stored ones (specification §7), for
+//! [pelicode](https://github.com/tamada/pelicode).
 //!
-//! Candidates are searched in stages: exact hashes from the weakest to the
-//! strongest normalization, then LSH buckets, then the fingerprint sets of
-//! the LSH candidates are compared.
+//! Given the features of the checked code ([`pelicode_core`]) and a database
+//! of published code ([`pelicode_db`]), a [`Detector`] lists for each
+//! function the stored functions it resembles, as a [`Report`] of
+//! [`Candidate`]s with their sources and licenses.
+//!
+//! The candidates are code *to review*: a match says nothing by itself about
+//! copying or license violations, and the decision is left to a person.
+//!
+//! # Search
+//!
+//! Candidates are searched in stages:
+//!
+//! 1. exact hashes, from the weakest normalization to the strongest (N0,
+//!    then N1, then N2), reported as [`MatchKind::Exact`];
+//! 2. LSH buckets, which narrow down the stored functions that may be
+//!    similar;
+//! 3. the fingerprint sets of those LSH candidates, compared by Jaccard
+//!    similarity (optionally IDF-weighted, [`Options::idf`]) and reported as
+//!    [`MatchKind::Similar`] from [`Options::threshold`] on. The matching
+//!    line ranges on both sides are reported too.
+//!
+//! # Filtering common code
+//!
+//! - Hashes found in at least [`Options::stop_packages`] packages are
+//!   ignored (getters, `equals`, boilerplate).
+//! - A similar match needs [`Options::min_shared`] shared fingerprints.
+//! - Packages can be excluded by name ([`Options::exclude_packages`]).
+//! - Matches found only in the project's own dependencies, read from its
+//!   lock files and manifests by [`dependencies`], are left out.
+//!
+//! # Examples
+//!
+//! A function renamed from a stored one is found as an exact match at N1:
+//!
+//! ```
+//! use pelicode_core::{Config, Language, Level, extract_bytes};
+//! use pelicode_db::{Database, PackageInfo};
+//! use pelicode_detect::{Detector, MatchKind, Options};
+//!
+//! let dir = tempfile::tempdir()?;
+//! let config = Config { min_tokens: 0, ..Config::default() };
+//! let mut db = Database::open(dir.path().join("pelicode.db"), &config)?;
+//! let stored = b"def total(xs):\n    s = 0\n    for x in xs:\n        s += x * 2\n    return s\n";
+//! let file = extract_bytes("calc.py".as_ref(), Language::Python, stored, &config)?;
+//! let package = PackageInfo {
+//!     ecosystem: "pypi".into(), name: "calc".into(), version: "1.0".into(), ..PackageInfo::default()
+//! };
+//! db.index(&package, &[file])?;
+//!
+//! let checked = b"def doubled_sum(values):\n    acc = 0\n    for v in values:\n        acc += v * 2\n    return acc\n";
+//! let file = extract_bytes("mine.py".as_ref(), Language::Python, checked, &config)?;
+//! let detector = Detector::new(&db, Options { min_tokens: 0, ..Options::default() })?;
+//! let reports = detector.detect(&[file], |_, _| true)?;
+//!
+//! let candidate = &reports[0].candidates[0];
+//! assert_eq!(candidate.kind, MatchKind::Exact(Level::N1));
+//! assert_eq!(candidate.occurrences[0].package, "calc");
+//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! ```
+//!
+//! The `select` closure of [`Detector::detect`] chooses the functions to
+//! check, for example those touched by a git diff. [`detect_all`] searches
+//! several databases at once and merges the results.
 
 #![warn(missing_docs)]
 

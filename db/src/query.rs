@@ -1,4 +1,11 @@
 //! Lookups used by the detector.
+//!
+//! The detector first looks up functions with the same exact hash
+//! ([`Database::functions_by_exact_hash`]), then the functions sharing an
+//! LSH bucket ([`Database::functions_by_lsh_bucket`]), and compares their
+//! fingerprints ([`Database::fingerprints`]). The candidates it keeps are
+//! described by [`Database::function_info`] and traced back to the packages
+//! they occur in by [`Database::occurrences`].
 
 use pelicode_core::{Hash128, Level};
 use rusqlite::params;

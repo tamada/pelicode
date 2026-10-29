@@ -1,4 +1,23 @@
 //! Parameters of feature extraction.
+//!
+//! A [`Config`] fixes how functions are turned into features: how small a
+//! function may be and still get fingerprints, how identifiers are
+//! abstracted ([`IdentMode`]), the k-gram size and winnowing window, the
+//! MinHash and LSH sizes, and the normalization [`Level`]s that get
+//! fingerprints. Changing any of them changes the features, so a database
+//! is built and searched with one `Config`, recorded in it alongside
+//! [`NORMALIZER_VERSION`].
+//!
+//! # Examples
+//!
+//! ```
+//! use pelicode_core::{Config, Level};
+//!
+//! let config = Config { kgram: 8, fingerprint_levels: vec![Level::N1, Level::N2], ..Config::default() };
+//! config.validate()?;
+//! assert_eq!(config.rows(), config.minhash_size / config.bands);
+//! # Ok::<(), pelicode_core::Error>(())
+//! ```
 
 use std::fmt;
 use std::str::FromStr;

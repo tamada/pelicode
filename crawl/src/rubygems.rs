@@ -1,4 +1,9 @@
 //! RubyGems: releases via the JSON API, sources from the `.gem` file.
+//!
+//! A `.gem` is a tar archive whose `data.tar.gz` holds the sources;
+//! [`archive`](crate::archive) reads it in memory. The license and the
+//! source repository come from the gem metadata, and the SHA-256 published
+//! by RubyGems is checked against the download.
 
 use serde_json::Value;
 
