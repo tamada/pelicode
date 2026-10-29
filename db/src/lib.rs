@@ -1,4 +1,67 @@
-//! SQLite storage of function features (specification §5).
+//! SQLite storage of function features (specification §5) for
+//! [pelicode](https://github.com/tamada/pelicode).
+//!
+//! A [`Database`] keeps the features computed by [`pelicode_core`] together
+//! with their provenance: ecosystem, package, version, file path, license,
+//! repository and download URL ([`PackageInfo`]). **Source code is never
+//! stored**, only hashes, locations and metadata.
+//!
+//! # Layout
+//!
+//! - Packages and their versions, and the source files of each version.
+//!   Files are identified by the SHA-256 of their content, so a file shared
+//!   by many versions is stored once and linked from each
+//!   ([`Database::index`]).
+//! - Functions, with their exact hashes, fingerprints, MinHash signatures
+//!   and LSH buckets per level. Lookups such as
+//!   [`Database::functions_by_exact_hash`] serve the detector.
+//! - Document frequencies: how many packages contain each hash
+//!   ([`Database::refresh_hash_stats`]), so common code can be ignored or
+//!   down-weighted.
+//! - Meta data: the [`Config`] the features were computed with, the
+//!   normalizer version and the table layout ([`SCHEMA_VERSION`]).
+//!
+//! # Compatibility
+//!
+//! [`Database::open`] checks the recorded parameters against the given
+//! [`Config`] and fails with [`Error::Incompatible`] when they differ, so
+//! features that cannot be compared are never mixed. To read a database
+//! whose parameters are not known in advance, open it with
+//! [`Database::open_unchecked`] and take its [`Config`] from
+//! [`Database::config_from_meta`]. Older table layouts back to
+//! [`OLDEST_SCHEMA_VERSION`] are upgraded on open.
+//!
+//! # Examples
+//!
+//! ```
+//! use pelicode_core::{Config, Language, extract_bytes};
+//! use pelicode_db::{Database, PackageInfo};
+//!
+//! let dir = tempfile::tempdir()?;
+//! let config = Config::default();
+//! let mut db = Database::open(dir.path().join("pelicode.db"), &config)?;
+//!
+//! let source = b"def greet(name):\n    return 'Hello, ' + name\n";
+//! let file = extract_bytes("greet.py".as_ref(), Language::Python, source, &config)?;
+//! let package = PackageInfo {
+//!     ecosystem: "pypi".into(),
+//!     name: "greet".into(),
+//!     version: "1.0".into(),
+//!     license_spdx: Some("MIT".into()),
+//!     ..PackageInfo::default()
+//! };
+//! let summary = db.index(&package, &[file])?;
+//! assert_eq!(summary.functions, 1);
+//!
+//! db.refresh_hash_stats()?;
+//! assert_eq!(db.stats()?.packages, 1);
+//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! ```
+//!
+//! # Maintenance
+//!
+//! [`Database::clean`] removes data no longer referenced, and
+//! [`Database::snapshot`] writes a copy for checking only, to distribute.
 
 #![warn(missing_docs)]
 

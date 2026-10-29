@@ -1,4 +1,10 @@
 //! Discovery and parallel extraction of source files under a directory.
+//!
+//! [`discover`] walks a directory like Git would see it (hidden files and
+//! files ignored by `.gitignore` are skipped) and keeps the files of
+//! supported languages, each with its path relative to the root.
+//! [`extract_all`] then extracts them on all cores with rayon, returning one
+//! result per file so that a file that cannot be read does not stop the rest.
 
 use std::path::{Path, PathBuf};
 

@@ -1,4 +1,21 @@
 //! Language adapters: the per-language rules for function extraction and normalization.
+//!
+//! A [`Language`] knows its file extensions, its Tree-sitter grammar, which
+//! AST nodes are function units, and which tokens are identifiers, literals
+//! and type names for normalization. Adding a language means adding a
+//! variant here and its rules; see `CONTRIBUTING.md` in the repository.
+//!
+//! # Examples
+//!
+//! ```
+//! use std::path::Path;
+//! use pelicode_core::Language;
+//!
+//! assert_eq!(Language::from_path(Path::new("src/main.rs")), Some(Language::Rust));
+//! assert_eq!(Language::from_extension("kts"), Some(Language::Kotlin));
+//! assert_eq!(Language::Python.name(), "python");
+//! assert_eq!(Language::ALL.len(), 6);
+//! ```
 
 use std::fmt;
 use std::path::Path;

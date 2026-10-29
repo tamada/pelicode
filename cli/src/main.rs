@@ -1,5 +1,15 @@
-//! The `pelicode` command: crawl, index, stats, scan, extract, export and
-//! languages, on top of the pelicode-core, -db, -detect and -crawl crates.
+//! The `pelicode` command: crawl, index, stats, clean, snapshot, pull, scan,
+//! extract, export and languages, on top of the pelicode-core, -db, -detect
+//! and -crawl crates.
+//!
+//! The command builds a database of published code (`crawl`, `index`,
+//! `stats --refresh`) and checks code against it (`scan`), reporting the
+//! similar functions as text, JSON, CSV or SARIF. Options can also come from
+//! a `.pelicode.yaml` settings file (`settings`), functions to check can be
+//! limited to those changed in a git diff (`git`), and databases can be
+//! distributed as snapshots through OCI registries (`oci`).
+//!
+//! See <https://tamada.github.io/pelicode/> for the user guide.
 
 // The doc comments of the clap arguments are the text of `--help`, where
 // `NAME[@VERSION]` is notation, not a link.

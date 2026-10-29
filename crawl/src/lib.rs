@@ -1,5 +1,72 @@
 //! Crawler: fetches package sources from public repositories and indexes
-//! their functions (specification §6).
+//! their functions (specification §6), for
+//! [pelicode](https://github.com/tamada/pelicode).
+//!
+//! # Repositories
+//!
+//! | [`Ecosystem`] | Package specification | Archive | Digest |
+//! | --- | --- | --- | --- |
+//! | PyPI ([`pypi`]) | `NAME[@VERSION]` | sdist, or a wheel when there is none | SHA-256 |
+//! | Maven Central ([`maven`]) | `GROUP:ARTIFACT[:VERSION]` | `-sources.jar` | SHA-1 |
+//! | Go module proxy ([`go`]) | `MODULE[@VERSION]` | module zip | `h1:` from sum.golang.org |
+//! | RubyGems ([`rubygems`]) | `NAME[@VERSION]` | `.gem` | SHA-256 |
+//! | crates.io ([`crates`]) | `NAME[@VERSION]` | `.crate` | SHA-256 |
+//!
+//! Without a version, the latest release is fetched.
+//!
+//! # Steps
+//!
+//! [`Crawler::crawl`] handles one package:
+//!
+//! 1. the repository adapter resolves the specification into a [`Release`]:
+//!    the version, its license and repository, the archive URL and the
+//!    digest published for it;
+//! 2. a version already indexed is skipped ([`Outcome::Skipped`]) unless
+//!    re-indexing is forced;
+//! 3. the archive is downloaded (up to [`MAX_ARCHIVE_SIZE`]) and checked
+//!    against the digest ([`Error::DigestMismatch`]);
+//! 4. its source files are read in memory ([`archive`]), never unpacked to
+//!    disk, and their functions are extracted in parallel;
+//! 5. the functions are stored with their provenance ([`Outcome::Indexed`]).
+//!
+//! Failures after the version is known are recorded in the database, so the
+//! next crawl can tell what is missing. For Go modules, whose metadata
+//! declares no license, the license file is identified by [`license`].
+//!
+//! # Being polite
+//!
+//! The [`Client`] sends one request at a time with a delay between requests,
+//! retries with backoff, and identifies itself in the `User-Agent`. Give it
+//! a contact URL or e-mail address when crawling many packages; crates.io in
+//! particular asks crawlers for one.
+//!
+//! # Examples
+//!
+//! ```no_run
+//! use std::time::Duration;
+//! use pelicode_core::Config;
+//! use pelicode_crawl::{Client, Crawler, Ecosystem, Outcome};
+//! use pelicode_db::Database;
+//!
+//! let config = Config::default();
+//! let mut db = Database::open("pelicode.db", &config)?;
+//! let client = Client::new(Some("https://example.org/about"), Duration::from_secs(1));
+//! let crawler = Crawler::new(client, config, false);
+//!
+//! let ecosystem: Ecosystem = "crates.io".parse()?;
+//! for spec in ["uuid@1.11.0", "serde_json"] {
+//!     match crawler.crawl(&mut db, ecosystem, spec)? {
+//!         Outcome::Indexed { package, summary, .. } => {
+//!             println!("{}@{}: {} function(s)", package.name, package.version, summary.functions)
+//!         }
+//!         Outcome::Skipped { package } => println!("{}@{}: already indexed", package.name, package.version),
+//!     }
+//! }
+//! # Ok::<(), pelicode_crawl::Error>(())
+//! ```
+//!
+//! To pick packages, [`pypi::top_packages`], [`crates::top_packages`] and
+//! [`ecosystems::top_packages`] list the best-known ones of each repository.
 
 #![warn(missing_docs)]
 
