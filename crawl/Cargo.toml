@@ -10,6 +10,7 @@ authors.workspace = true
 description = "Crawler fetching package sources from PyPI, Maven Central, the Go module proxy, RubyGems and crates.io, for pelicode"
 keywords = ["crawler", "pypi", "maven", "crates-io", "rubygems"]
 categories = ["development-tools"]
+readme = "README.md"
 
 [dependencies]
 base64 = "0.23.1"
