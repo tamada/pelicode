@@ -14,7 +14,7 @@ COPY . .
 # which the slim image carries.
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/src/target \
-    cargo build --locked --release -p pelicode-cli \
+    cargo build --locked --release -p pelicode \
     && cp target/release/pelicode /usr/local/bin/pelicode
 
 FROM debian:trixie-slim

@@ -106,7 +106,7 @@ flowchart LR
 | pelicode-db (`db`) | Storage in and lookups from SQLite, compatibility checks, package counts per hash | core |
 | pelicode-detect (`detect`) | Candidate search and similarity | core, db |
 | pelicode-crawl (`crawl`) | Fetching from public repositories, digest verification, reading archives, license identification | core, db |
-| pelicode-cli (`cli`) | The `pelicode` command, including the interpretation of git diffs and the output formats | all |
+| pelicode (`cli`) | The `pelicode` command, including the interpretation of git diffs and the output formats | all |
 
 ---
 

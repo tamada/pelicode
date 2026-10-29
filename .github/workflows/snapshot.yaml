@@ -54,7 +54,7 @@ jobs:
 
       - name: Build pelicode
         run: |
-          cargo build --locked --release -p pelicode-cli
+          cargo build --locked --release -p pelicode
           echo "$GITHUB_WORKSPACE/target/release" >> "$GITHUB_PATH"
 
       # A package that fails is recorded in the database and does not stop the others;

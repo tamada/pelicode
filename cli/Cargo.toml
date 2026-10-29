@@ -1,5 +1,5 @@
 [package]
-name = "pelicode-cli"
+name = "pelicode"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

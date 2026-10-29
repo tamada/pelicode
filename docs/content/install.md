@@ -41,21 +41,21 @@ brew uninstall pelicode
 ## 📦 With Cargo
 
 ```sh
-cargo install pelicode-cli
+cargo install pelicode
 ```
 
-This builds the [`pelicode-cli`](https://crates.io/crates/pelicode-cli) crate from crates.io and installs the `pelicode` command into Cargo's binary directory (usually `~/.cargo/bin`, which should be in your `PATH`).
+This builds the [`pelicode`](https://crates.io/crates/pelicode) crate from crates.io and installs the `pelicode` command into Cargo's binary directory (usually `~/.cargo/bin`, which should be in your `PATH`).
 
 To install the latest commit of the repository instead:
 
 ```sh
-cargo install --git https://github.com/tamada/pelicode pelicode-cli
+cargo install --git https://github.com/tamada/pelicode pelicode
 ```
 
 To remove it later:
 
 ```sh
-cargo uninstall pelicode-cli
+cargo uninstall pelicode
 ```
 
 ---
@@ -107,7 +107,7 @@ The repository is a Cargo workspace of five crates:
 | `db` | pelicode-db | SQLite storage, lookups and hash counts |
 | `detect` | pelicode-detect | Search for similar code candidates |
 | `crawl` | pelicode-crawl | Fetching from PyPI, Maven Central, the Go module proxy, RubyGems and crates.io |
-| `cli` | pelicode-cli | The `pelicode` command |
+| `cli` | pelicode | The `pelicode` command |
 
 ---
 
